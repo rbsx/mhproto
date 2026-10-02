@@ -37,10 +37,13 @@ test('payload mismatch, dangling rules and bad local refs are errors', async () 
     op.responses['200'].content['application/json'].example={status:42};
     doc.components={schemas:{Broken:{$ref:'#/components/schemas/Unknown'}}};
   });
+  await editYaml(root,'bive.yaml',doc=>doc.capabilities[0].presentation={operations:{missingOperation:{rules:['MISSING-B-3']}}});
   const issues=await validateProject(await loadProject(root));
   assert.ok(issues.some(i=>i.message.includes('missing rule MISSING-B-2')));
   assert.ok(issues.some(i=>i.message.includes('must be string')));
   assert.ok(issues.some(i=>i.message.includes('Unresolved reference')));
+  assert.ok(issues.some(i=>i.message.includes('missing operation missingOperation')));
+  assert.ok(issues.some(i=>i.message.includes('missing rule MISSING-B-3')));
 });
 
 test('schema requests and declared response examples are validated', async () => {
@@ -119,4 +122,6 @@ test('standalone viewer embeds data safely and ships without fetch dependence', 
   assert.ok(html.includes('if(embedded)'));
   assert.ok(!html.includes('</script><script>evil()'));
   assert.ok(html.includes('\\u003c/script>'));
+  const embeddedApp=html.match(/<script type="module">([\s\S]*?)<\/script>/)[1];
+  assert.doesNotThrow(()=>new Function(`return (async()=>{${embeddedApp}\n})()`));
 });

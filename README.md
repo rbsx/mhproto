@@ -45,11 +45,15 @@ Use `--root PATH` for another app. See `bive help` for command options and `skil
 
 ## Viewer
 
-The viewer starts with behaviour and four task-focused views: Behaviour, API, Checks and Changes. Open a rule to follow its examples, endpoints and evidence in a detail panel with Back navigation. Checks start with missing, failing or stale evidence. Nested types, raw schemas, commands and source metadata are revealed on demand.
+The sidebar lists the project and its features. A feature opens one page: title, product/logic description, relative app URL, visible API request/response signatures, play-state diagrams and a Checks section. Search stays at the top; Sources is a secondary link in the sidebar.
 
-The visual system uses white backgrounds, near-black text, neutral dividers and blue/purple links. See `doc/viewer-design.md` for the flows and acceptance criteria.
+Each endpoint opens its own page with a stable `#/features/:feature/api/:operation` URL. Behaviour, errors, examples and checks are attached to that endpoint. Nested objects expand inside their signatures; there is no shared-type browser or modal navigation. The Copy page link action preserves direct navigation to the endpoint.
 
-Optional capability `presentation` metadata controls `entrySection`, `sectionTitles` and `ruleTitles`. These are navigation labels and concise summaries; the full source rule remains authoritative in its detail view.
+The visual system uses white backgrounds, near-black text, neutral dividers and blue/purple links. HTTP method badges retain restrained colour coding. See `doc/viewer-design.md` for the flows and acceptance criteria.
+
+Optional capability `url` identifies the app route. `presentation.operationOrder` orders endpoints by use. `presentation.operations[operationId]` accepts `description`, a concise `behaviour` summary, additional `rules`, optional `ruleGroups` (`title`, `rules`) and `diagrams` (`title`, Mermaid `source`). `ruleTitles` supplies concise labels in search and check gaps. These are navigation and context; full source clauses remain authoritative. Operation and rule references are validated.
+
+Mermaid fences in the behaviour/system document and endpoint diagrams render as monochrome SVG. The bundled Mermaid runtime also works offline in the exported HTML. Diagram source stays available on demand; invalid diagrams show an error without blocking the rest of the page. The CLI validates diagram metadata, not Mermaid syntax; renderer tests and preview review establish diagram validity.
 
 `bive build --out ./bive-preview` creates a portable `viewer.html` that can be opened without a server. The live viewer stays read-only; edit the source files to update the contract.
 

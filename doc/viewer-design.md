@@ -1,37 +1,42 @@
 # BIVE viewer design
 
-The viewer helps a developer understand and change a capability without reading a report of every artifact. The first screen should establish purpose and behaviour. Each deeper level answers a specific follow-up question.
+Start with the feature the developer is working on, its app route, and the data exchanged to implement it.
 
-## Primary flows
+## Structure
 
-| Intent | Entry | Next step | What stays deferred |
-| --- | --- | --- | --- |
-| Understand this capability | Purpose, phases, grouped behaviour rules | Open one rule | Types, commands, evidence logs |
-| Understand one rule | Rule detail | Related examples, endpoints and checks | Unrelated capability information |
-| Integrate a client/provider | API list | Endpoint parameters, request/response fields and errors | Nested types, JSON and other endpoints |
-| Find what needs work | Checks, attention first | Missing rule or failing/stale check | Passing check inventory and raw output |
-| Review a proposed change | Changes list | Before/after of one item | Entire before/after documents |
+- Sidebar: [b] logo, Project → Impostor, Features → Daily case (blue link). Sources stays in the sidebar footer.
+- Search at the top of every page.
+- Feature overview: title, product/logic description, relative URL, API visible by default, play-state diagram, then Checks.
+- Endpoint page: back to the feature, method/path, purpose, copyable page link, inline request/response types, attached behaviour, useful diagrams, errors, examples and Checks.
+- Check and Sources links open pages. No tabs or modals.
 
-## Information hierarchy
+## Reading flow
 
-Navigation: Behaviour, API, Checks, Changes. Examples belong beside their rules. Sources and system map are secondary tools.
+Read what the page loads and shows. Scan the endpoints in client-use order. Read request/response objects beside each endpoint; open it for complete behaviour and failures. Expand a nested object in place when its fields matter. Follow a rule or check through a stable URL.
 
-The initial daily-case view expands gameplay only. Other behaviour groups are collapsed. A contextual detail panel preserves the underlying view, supports following related items, and offers Back. Search finds rules, endpoints, examples and checks across the capability.
+Passing checks and rules without checks are compact disclosures below the API. Failures, unchecked results and stale results are surfaced directly. Full commands and raw payloads stay deferred.
 
-Verification language describes observed checks, not universal proof. Missing checks and stale evidence remain visible in the Checks flow. No passing percentage or dashboard cards appear on the default view.
+## Diagrams
+
+Use Mermaid for state transitions, UI decisions, start/retry idempotence, action races and delayed public reveal. Avoid diagrams that repeat a trivial request/response. Mermaid fences and endpoint diagrams render using the bundled runtime, with white fills, black text and neutral lines. Source is available separately. Invalid syntax must not prevent reading the page.
+
+The pilot uses six diagrams: play states, page-loading branches, retrying a start, overlapping actions, tap eligibility/transitions, and public reveal timing.
 
 ## Visual system
 
-White background, near-black text, light neutral dividers. Blue links and purple visited links. Colour is reserved for links, keyboard focus and exceptional errors. Native system typography; generous spacing; no tinted cards or decorative status colours.
+White background, near-black text, neutral separators. Blue links and purple visited links. Colour accents are limited to HTTP methods, focus and errors. Signature fields stay inline; no separate shared-type catalogue.
 
 ## Acceptance
 
-- A reader can explain the capability before opening metadata.
-- A rule leads directly to its examples, interfaces and evidence.
-- Passing checks do not obscure missing/failing/stale checks.
-- Raw JSON, test commands and source prose are closed by default.
-- Detail navigation preserves context and supports Back.
-- Keyboard users can reach every control and see focus.
-- Mobile layout keeps primary navigation and readable content.
+- Search is the first main-page control; the project and feature are clear in the sidebar.
+- Daily case describes real client behaviour and shows /daily.
+- API and object signatures are visible without opening a tab or accordion.
+- Every endpoint has a directly loadable URL; Back returns to the feature.
+- Behaviour is attached to endpoints, including privacy, preconditions and failures.
+- Nested fields expand in context, with nullable/optional distinctions retained.
+- Checks appear below API, with freshness and coverage limits clear.
+- Flow, state and sequence diagrams render, including loops and branching.
+- A broken diagram retains its source and does not break navigation.
+- Responsive layout stacks request/response objects on narrow screens.
 
-This revision is a reviewable design prototype. DOM flow tests provide interaction evidence; visual browser QA remains limited by the session’s browser/file and localhost restrictions.
+DOM tests cover navigation and actual Mermaid SVG rendering using simulated text measurements. Visual browser QA remains blocked by this session’s file/localhost restrictions.

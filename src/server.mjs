@@ -3,7 +3,7 @@ import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { loadProject, validateProject, packageRoot } from './core.mjs';
 
-const assets = { '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'] };
+const assets = { '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'], '/vendor/mermaid.min.js': ['vendor/mermaid.min.js', 'text/javascript'] };
 export async function model(root) {
   const project = await loadProject(root);
   return { ...project, issues: await validateProject(project) };
@@ -33,7 +33,7 @@ export function compareModels(before, after) {
 
 export async function serve(root, port = 4317) {
   const server = createServer(async (request, response) => {
-    response.setHeader('content-security-policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'");
+    response.setHeader('content-security-policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'");
     response.setHeader('x-content-type-options', 'nosniff');
     response.setHeader('cache-control', 'no-store');
     const url = new URL(request.url ?? '/', 'http://127.0.0.1');
@@ -65,15 +65,19 @@ export async function serve(root, port = 4317) {
 
 export async function exportViewer(root, destination) {
   await mkdir(destination, { recursive: true });
-  for (const [name] of Object.values(assets)) await writeFile(path.join(destination, name), await readFile(path.join(packageRoot, 'viewer', name)));
+  for (const [name] of Object.values(assets)) {
+    await mkdir(path.dirname(path.join(destination, name)), { recursive: true });
+    await writeFile(path.join(destination, name), await readFile(path.join(packageRoot, 'viewer', name)));
+  }
   const project = await model(root);
   await writeFile(path.join(destination, 'model.json'), JSON.stringify(project, null, 2));
   let baseline;
   try { baseline = JSON.parse(await readFile(path.join(root, '.bive/baseline.json'), 'utf8')); } catch (e) { if (e.code !== 'ENOENT') throw e; }
   const changes = { available: Boolean(baseline), changes: baseline ? compareModels(baseline, project) : [] };
-  const [html, css, js] = await Promise.all(['index.html', 'style.css', 'app.js'].map(name => readFile(path.join(packageRoot, 'viewer', name), 'utf8')));
+  const [html, css, js, mermaid] = await Promise.all(['index.html', 'style.css', 'app.js', 'vendor/mermaid.min.js'].map(name => readFile(path.join(packageRoot, 'viewer', name), 'utf8')));
   const safeJson = value => JSON.stringify(value).replaceAll('<', '\\u003c');
-  const standalone = html.replace('<link rel="stylesheet" href="/style.css">', `<style>${css}</style>`)
-    .replace('<script type="module" src="/app.js"></script>', `<script id="bive-model" type="application/json">${safeJson(project)}</script><script id="bive-diff" type="application/json">${safeJson(changes)}</script><script type="module">${js}</script>`);
+  const standalone = html.replace('<link rel="stylesheet" href="/style.css">', () => `<style>${css}</style>`)
+    .replace('<script src="/vendor/mermaid.min.js"></script>', () => `<script>${mermaid.replace(/<\/script/gi, '<\\/script')}</script>`)
+    .replace('<script type="module" src="/app.js"></script>', () => `<script id="bive-model" type="application/json">${safeJson(project)}</script><script id="bive-diff" type="application/json">${safeJson(changes)}</script><script type="module">${js.replace(/<\/script/gi, '<\\/script')}</script>`);
   await writeFile(path.join(destination, 'viewer.html'), standalone);
 }

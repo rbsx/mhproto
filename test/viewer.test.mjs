@@ -8,115 +8,153 @@ import { JSDOM } from 'jsdom';
 import { packageRoot } from '../src/core.mjs';
 import { model } from '../src/server.mjs';
 
-async function fixture(change = () => {}, changes = { available: false, changes: [] }) {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'bive-flow-'));
-  execFileSync(process.execPath, [path.join(packageRoot,'bin/bive.mjs'),'init','--root',root,'--no-skills']);
-  const project = await model(root), cap = project.capabilities[0];
-  cap.rules.push({ id:'EXAMPLE-B-2', text:'Only authorised users can update a service.' });
-  cap.prose += '\n## Permissions\n- **EXAMPLE-B-2** Only authorised users can update a service.\n';
-  cap.presentation = { ruleTitles:{'EXAMPLE-B-1':'Read the current service status.'} };
-  cap.openapi.components = { schemas:{
-    Status:{ type:'object', required:['status'], properties:{status:{type:'string'}, owner:{$ref:'#/components/schemas/User'}} },
-    User:{ type:'object', properties:{id:{type:'string'}} },
+async function fixture({change=()=>{},hash='',realMermaid=false}={}) {
+  const root=await mkdtemp(path.join(os.tmpdir(),'bive-flow-'));
+  execFileSync(process.execPath,[path.join(packageRoot,'bin/bive.mjs'),'init','--root',root,'--no-skills']);
+  const project=await model(root),cap=project.capabilities[0];
+  project.name='Example app';cap.url='/status';cap.description='Loads and displays the service status. Users may update it if authorised.';
+  cap.rules.push({id:'EXAMPLE-B-2',text:'Only authorised users can update a service.'});
+  cap.openapi.components={schemas:{
+    Status:{type:'object',required:['status','owner'],properties:{status:{type:'string',enum:['ready','busy']},owner:{anyOf:[{$ref:'#/components/schemas/User'},{type:'null'}]}}},
+    User:{type:'object',required:['id'],properties:{id:{type:'string',format:'uuid'},name:{type:'string'}}}
   }};
-  cap.operations[0].responses['200'].content['application/json'].schema = {$ref:'#/components/schemas/Status'};
-  cap.checks = [{ id:'EXAMPLE-V-1',title:'EXAMPLE-B-1 status has the expected shape',command:['node','check.mjs'],rules:['EXAMPLE-B-1'],examples:['EXAMPLE-E-1'],testNames:['status check'] }];
-  cap.evidence = { finishedAt:'2026-10-02T09:00:00Z', stale:false, results:[{id:'EXAMPLE-V-1',status:'passing',tests:[{name:'status check',type:'test:pass'}]}] };
+  cap.operations[0].responses['200'].content['application/json'].schema={$ref:'#/components/schemas/Status'};
+  cap.operations.push({operationId:'setStatus',method:'POST',path:'/status/{id}',summary:'Update service status',rules:['EXAMPLE-B-2'],parameters:[{in:'path',name:'id',required:true,schema:{type:'string',format:'uuid'}}],requestBody:{required:true,content:{'application/json':{schema:{type:'object',required:['status','load'],properties:{status:{type:'string',enum:['ready','busy']},load:{type:'number',minimum:0,maximum:1}}}}}},responses:{'201':{description:'Updated',content:{'application/json':{schema:{$ref:'#/components/schemas/Status'}}}},'403':{description:'Permission denied','x-error-codes':[{code:'forbidden',when:'User cannot update this service',clause:'EXAMPLE-B-2'}]}}});
+  cap.presentation={operations:{getStatus:{behaviour:'Returns the current service status.'},setStatus:{behaviour:'Requires permission to update.',diagrams:[{title:'Permission flow',source:'flowchart TD\n A["Request"] --> B{"Permission?"}\n B -->|Yes|C["Update"]\n B -->|No|D["403 forbidden"]'}]}}};
+  cap.checks=[{id:'EXAMPLE-V-1',title:'Read status',command:['node','check.mjs'],rules:['EXAMPLE-B-1'],testNames:['status check']}];
+  cap.evidence={finishedAt:'2026-10-02T09:00:00Z',stale:false,results:[{id:'EXAMPLE-V-1',status:'passing',tests:[{name:'status check',type:'test:pass'}]}]};
   change(project);
-  const html = await readFile(path.join(packageRoot,'viewer/index.html'),'utf8');
-  const dom = new JSDOM(html,{runScripts:'outside-only',url:'https://bive.test/'});
-  const {window} = dom, doc = window.document;
-  for (const [id,data] of [['bive-model',project],['bive-diff',changes]]) {
-    const element=doc.createElement('script');element.id=id;element.type='application/json';element.textContent=JSON.stringify(data);doc.body.append(element);
-  }
-  // JSDOM simulates DOM flow; native layout and modal focus-trapping are not assessed.
-  window.HTMLDialogElement.prototype.showModal=function(){this.setAttribute('open','');};
-  window.HTMLDialogElement.prototype.close=function(){this.removeAttribute('open');};
-  const script=await readFile(path.join(packageRoot,'viewer/app.js'),'utf8');
-  await window.eval(`(async()=>{${script}\n})()`);
-  const click=selector=>{const element=doc.querySelector(selector);assert.ok(element,selector);element.click();return element;};
-  return {dom,window,doc,click};
+  const dom=new JSDOM(await readFile(path.join(packageRoot,'viewer/index.html'),'utf8'),{runScripts:'outside-only',url:'https://bive.test/'+hash});
+  const {window}=dom,doc=window.document;window.scrollTo=()=>{};
+  const element=doc.createElement('script');element.id='bive-model';element.type='application/json';element.textContent=JSON.stringify(project);doc.body.append(element);
+  if(realMermaid){
+    window.structuredClone=structuredClone;
+    // SVG text measurement is approximate in JSDOM: tests assess parsing/rendering, not pixel layout.
+    window.SVGElement.prototype.getBBox=function(){return {x:0,y:0,width:Math.max(30,(this.textContent??'').length*6),height:18};};
+    window.SVGElement.prototype.getComputedTextLength=function(){return Math.max(30,(this.textContent??'').length*6);};
+    await window.eval(await readFile(path.join(packageRoot,'viewer/vendor/mermaid.min.js'),'utf8'));
+  } else window.mermaid={initialize:config=>window.mermaidConfig=config,render:async(id)=>({svg:`<svg id="${id}" xmlns="http://www.w3.org/2000/svg"></svg>`})};
+  await window.eval(`(async()=>{${await readFile(path.join(packageRoot,'viewer/app.js'),'utf8')}\n})()`);
+  const click=async selector=>{
+    const item=doc.querySelector(selector);assert.ok(item,selector);
+    if(item.tagName==='A'&&item.hash&&item.hash!==window.location.hash){
+      const navigation=new Promise(resolve=>window.addEventListener('hashchange',resolve,{once:true}));item.click();await navigation;await window.biveReady;
+    }else {item.click();await Promise.resolve();}
+    return item;
+  };
+  return {dom,window,doc,click,project};
 }
 
-test('understand a capability without opening schemas, logs or source metadata',async()=>{
+test('feature overview starts with API signatures and ends with checks, without tabs or modals',async()=>{
   const {dom,doc}=await fixture();
+  assert.equal(doc.querySelector('#project-name').textContent,'Example app');
+  assert.equal(doc.querySelector('#features a').textContent,'Example capability');
+  assert.equal(doc.querySelector('.brand-mark').textContent,'[b]');
+  assert.equal(doc.querySelector('main').firstElementChild.className,'search-row');
   assert.equal(doc.querySelector('h1').textContent,'Example capability');
-  assert.equal(doc.querySelectorAll('#tabs button').length,4);
-  assert.equal(doc.querySelectorAll('.rule-group[open]').length,1);
-  assert.ok(doc.querySelector('.rule-group[open]').textContent.includes('Read the current service status'));
-  assert.equal(doc.querySelectorAll('#content pre,#content .table,#stats').length,0);
-  assert.ok(!doc.querySelector('#detail').open);
+  assert.equal(doc.querySelector('.feature-url code').textContent,'/status');
+  assert.equal(doc.querySelectorAll('.endpoint').length,2);
+  assert.equal(doc.querySelectorAll('.endpoint .io-grid').length,2);
+  assert.equal(doc.querySelectorAll('#tabs,dialog,#breadcrumb').length,0);
+  assert.ok(doc.querySelector('#api').compareDocumentPosition(doc.querySelector('.checks-section'))&dom.window.Node.DOCUMENT_POSITION_FOLLOWING);
+  assert.ok(!doc.querySelector('#content').textContent.includes('Browse shared types'));
   dom.window.close();
 });
 
-test('follow a rule to its example, API and nested type, then return in context',async()=>{
-  const {dom,doc,click}=await fixture();
-  const trigger=doc.querySelector('[data-kind="rule"]');trigger.focus();trigger.click();
-  assert.ok(doc.querySelector('#detail').open);
-  assert.ok(doc.querySelector('#detail-content .related[open]').textContent.includes('The service is ready'));
-  const api=doc.querySelector('#detail-content [data-kind="operation"]');api.closest('details').open=true;api.click();
-  assert.ok(doc.querySelector('#detail-title').textContent.includes('/status'));
-  assert.ok(doc.querySelector('#detail-content').textContent.includes('Required'));
-  const rawOpenApi = [...doc.querySelectorAll('#detail-content summary')].find(item=>item.textContent==='Raw OpenAPI');
-  assert.ok(rawOpenApi);
-  assert.ok(!rawOpenApi.closest('details').open);
-  click('#detail-content [data-kind="schema"]');
-  assert.equal(doc.querySelector('#detail-title').textContent,'User');
-  click('#detail-back');assert.ok(doc.querySelector('#detail-title').textContent.includes('/status'));
-  click('#detail-back');assert.ok(doc.querySelector('#detail-title').textContent.includes('Read the current'));
-  click('.close');assert.ok(!doc.querySelector('#detail').open);assert.equal(doc.activeElement,trigger);
+test('endpoint opens a shareable page, direct navigation preserves it, and Back returns to the feature',async()=>{
+  const {dom,doc,window,click}=await fixture();
+  await click('.endpoint[data-operation="setStatus"] .endpoint-heading a');
+  assert.equal(window.location.hash,'#/features/example/api/setStatus');
+  assert.ok(doc.querySelector('h1').textContent.includes('/status/{id}'));
+  assert.equal(doc.querySelectorAll('dialog').length,0);
+  assert.ok(doc.querySelector('#EXAMPLE-B-2').textContent.includes('Only authorised users'));
+  const direct=await fixture({hash:window.location.hash});
+  assert.ok(direct.doc.querySelector('h1').textContent.includes('/status/{id}'));
+  const copied=[];Object.defineProperty(window.navigator,'clipboard',{value:{writeText:async value=>copied.push(value)}});
+  await click('[data-copy-url]');assert.equal(copied[0],window.location.href);
+  await click('.back');assert.equal(window.location.hash,'#/features/example');
+  assert.equal(doc.querySelectorAll('.endpoint').length,2);
+  dom.window.close();direct.dom.window.close();
+});
+
+test('request constraints and nullable nested response objects stay inline in the endpoint',async()=>{
+  const {dom,doc}=await fixture({hash:'#/features/example/api/setStatus'});
+  const io=doc.querySelector('.io-grid');
+  assert.ok(io.textContent.includes('Path'));
+  assert.ok(io.textContent.includes('uuid'));
+  assert.ok(io.textContent.includes('0–1'));
+  assert.ok(io.textContent.includes('Response 201'));
+  assert.ok(io.textContent.includes('"ready" | "busy"'));
+  const owner=[...io.querySelectorAll('.inline-object')].find(d=>d.querySelector('summary').textContent.startsWith('owner:'));
+  assert.ok(owner.querySelector('summary').textContent.includes('| null'));
+  owner.open=true;
+  assert.ok(owner.textContent.includes('id: string'));
+  assert.ok(owner.textContent.includes('name?: string'));
+  assert.equal(io.querySelectorAll('a').length,0);
   dom.window.close();
 });
 
-test('checks prioritise missing and failing evidence while passing checks stay available',async()=>{
-  const {dom,doc,click}=await fixture(project=>{
+test('checks below API surface failures and gaps while the passing inventory stays closed',async()=>{
+  const {dom,doc,click}=await fixture({change:project=>{
     const cap=project.capabilities[0];
-    cap.checks.push({id:'EXAMPLE-V-2',title:'Update permission check',rules:[],command:['node','other.mjs']});
+    cap.checks.push({id:'EXAMPLE-V-2',title:'Update permission',rules:[],command:['node','other.mjs']});
     cap.evidence.results.push({id:'EXAMPLE-V-2',status:'failing',stderr:'Denied incorrectly',tests:[]});
-  });
-  click('[data-tab="Checks"]');
-  assert.ok(doc.querySelector('#content [data-id="EXAMPLE-V-2"]'));
-  assert.equal(doc.querySelector('#content [data-id="EXAMPLE-V-1"]'),null);
-  assert.ok(doc.querySelector('#content [data-id="EXAMPLE-B-2"]'));
-  click('#content [data-id="EXAMPLE-V-2"]');
-  assert.ok(doc.querySelector('#detail-content').textContent.includes('Failed'));
-  assert.ok(doc.querySelector('#detail-content details[open]').textContent.includes('Denied incorrectly'));
-  click('.close');click('[data-filter="all"]');
-  assert.ok(doc.querySelector('#content [data-id="EXAMPLE-V-1"]'));
+  }});
+  const section=doc.querySelector('.checks-section');
+  assert.ok(section.textContent.includes('1 rule still needs'));
+  assert.ok(section.querySelector('details[open]').textContent.includes('Update permission'));
+  const passed=[...section.querySelectorAll('details')].find(d=>d.querySelector('summary').textContent==='Passing checks · 1');
+  assert.ok(!passed.open);
+  await click('.checks-section a[href$="EXAMPLE-V-2"]');
+  assert.ok(doc.querySelector('details[open]').textContent.includes('Denied incorrectly'));
   dom.window.close();
 });
 
-test('stale evidence is actionable rather than shown as passing',async()=>{
-  const {dom,doc,click}=await fixture(p=>p.capabilities[0].evidence.stale=true);
-  click('[data-tab="Checks"]');
-  assert.ok(doc.querySelector('#content [data-id="EXAMPLE-V-1"]').textContent.includes('Needs a new run'));
-  click('#content [data-id="EXAMPLE-V-1"]');
-  assert.ok(doc.querySelector('#detail-content').textContent.includes('Run the check again'));
+test('stale checks require a new run and grouped rule deep links open their containing group',async()=>{
+  const {dom,doc,click}=await fixture({hash:'#/features/example/api/setStatus?rule=EXAMPLE-B-2',change:p=>{
+    p.capabilities[0].evidence.stale=true;
+    p.capabilities[0].presentation.operations.setStatus.ruleGroups=[{title:'Permissions',rules:['EXAMPLE-B-2']}];
+  }});
+  assert.ok(doc.querySelector('#EXAMPLE-B-2').closest('details').open);
+  await click('.back');
+  assert.ok(doc.querySelector('.checks-section').textContent.includes('Needs a new run'));
+  await click('.checks-section a[href$="EXAMPLE-V-1"]');
+  assert.ok(doc.querySelector('#content').textContent.includes('Run this check again'));
   dom.window.close();
 });
 
-test('review one change without displaying full before/after JSON on the landing view',async()=>{
-  const change={capability:'example',kind:'rule',id:'EXAMPLE-B-1',status:'changed',before:{text:'Return the old status.'},after:{text:'Return the current status.'}};
-  const {dom,doc,click}=await fixture(()=>{},{available:true,changes:[change]});
-  click('[data-tab="Changes"]');
-  assert.equal(doc.querySelectorAll('#content pre').length,0);
-  click('#content [data-kind="change"]');
-  assert.ok(doc.querySelector('#detail-content').textContent.includes('Return the old status'));
-  assert.ok(doc.querySelector('#detail-content').textContent.includes('Return the current status'));
+test('search leads to endpoint context, and Sources is a secondary page with real file paths',async()=>{
+  const {dom,doc,window,click}=await fixture();
+  const input=doc.querySelector('#search');input.value='authorised';input.dispatchEvent(new window.Event('input'));
+  const result=doc.querySelector('.search-result a[href$="setStatus?rule=EXAMPLE-B-2"]');assert.ok(result);
+  await click('.search-result a[href$="setStatus?rule=EXAMPLE-B-2"]');assert.ok(doc.querySelector('#EXAMPLE-B-2'));
+  await click('#sources-link');
+  assert.equal(doc.querySelector('h1').textContent,'Sources');
+  assert.ok(doc.querySelector('.table').textContent.includes('bive/capabilities/example/examples.yaml'));
+  assert.ok(!doc.querySelector('.table').textContent.includes('[object Object]'));
+  assert.equal(doc.querySelectorAll('#content details[open]').length,0);
   dom.window.close();
 });
 
-test('search crosses views and sources remain a secondary action',async()=>{
-  const {dom,window,doc,click}=await fixture();
-  const input=doc.querySelector('#search');input.value='Read the current';input.dispatchEvent(new window.Event('input'));
-  assert.ok(doc.querySelector('#content [data-id="EXAMPLE-B-1"]'));
-  input.value='No match at all';input.dispatchEvent(new window.Event('input'));
-  assert.ok(doc.querySelector('#content').textContent.includes('No matches'));
-  click('[data-kind="sources"]');
-  assert.ok(doc.querySelector('#detail-content').textContent.includes('bive/interfaces/openapi.yaml'));
-  assert.ok(doc.querySelector('#detail-content').textContent.includes('bive/capabilities/example/examples.yaml'));
-  assert.ok(doc.querySelector('#detail-content').textContent.includes('bive/capabilities/example/checks.yaml'));
-  assert.ok(!doc.querySelector('#detail-content').textContent.includes('[object Object]'));
-  assert.equal(doc.querySelectorAll('#detail-content details[open]').length,0);
+test('Mermaid flow, state and sequence sources render to SVG using the actual bundled runtime',async()=>{
+  const {dom,doc}=await fixture({realMermaid:true,hash:'#/features/example/api/setStatus',change:p=>{
+    p.capabilities[0].presentation.operations.setStatus.diagrams.push(
+      {title:'State flow',source:'stateDiagram-v2\n [*] --> ready\n ready --> ready: read\n ready --> busy: update\n busy --> ready: finish'},
+      {title:'Request race',source:'sequenceDiagram\n participant Client\n participant API\n participant Store\n Client->>API: Update\n API->>Store: Save\n Store-->>API: State\n API-->>Client: Result'}
+    );
+  }});
+  assert.equal(doc.querySelectorAll('.diagram-canvas[data-rendered="true"] svg').length,3);
+  assert.ok(doc.querySelectorAll('.diagram-canvas')[0].textContent.includes('Permission?'));
+  assert.ok(doc.querySelectorAll('.diagram-canvas')[1].textContent.includes('ready'));
+  assert.ok(doc.querySelectorAll('.diagram-canvas')[2].textContent.includes('Store'));
+  assert.equal(doc.querySelectorAll('.diagram-error').length,0);
+  dom.window.close();
+});
+
+test('a bad diagram does not prevent reading the endpoint or its signatures',async()=>{
+  const {dom,doc}=await fixture({realMermaid:true,hash:'#/features/example/api/setStatus',change:p=>p.capabilities[0].presentation.operations.setStatus.diagrams=[{title:'Broken',source:'not a valid diagram'}]});
+  assert.ok(doc.querySelector('.diagram-error').textContent.includes('Could not render'));
+  assert.ok(doc.querySelector('.diagram-source').textContent.includes('not a valid diagram'));
+  assert.ok(doc.querySelector('.io-grid').textContent.includes('Response 201'));
   dom.window.close();
 });

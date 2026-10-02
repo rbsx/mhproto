@@ -168,6 +168,12 @@ export async function validateProject(project) {
       for (const media of Object.values(resolveObject(cap.openapi, op.requestBody)?.content ?? {})) if ('example' in media) validateData(media.schema, media.example, `${op.operationId} request`);
     }
     for (const transition of [...cap.transitions, ...cap.nonTransitions]) if (transition.clause) cite(transition.clause, 'Transition');
+    for (const id of cap.presentation?.operationOrder ?? []) if (!operations.has(id)) issue(cap, 'error', `Presentation references missing operation ${id}`);
+    for (const [id, presentation] of Object.entries(cap.presentation?.operations ?? {})) {
+      if (!operations.has(id)) issue(cap, 'error', `Presentation references missing operation ${id}`);
+      for (const rule of [...(presentation.rules ?? []), ...(presentation.ruleGroups ?? []).flatMap(g => g.rules ?? [])]) cite(rule, `Presentation ${id}`);
+      for (const diagram of presentation.diagrams ?? []) if (typeof diagram.title !== 'string' || typeof diagram.source !== 'string') issue(cap, 'error', `Presentation ${id}: diagrams require title and source strings`);
+    }
     for (const example of cap.examples) {
       if (!example.id || examples.has(example.id)) issue(cap, 'error', `Missing or duplicate example id ${example.id}`);
       examples.add(example.id);
