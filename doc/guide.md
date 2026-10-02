@@ -1,6 +1,6 @@
 # MHProto guide
 
-Detailed usage and reference documentation for the [project website](https://mhproto.dev/docs/).
+Detailed usage and reference documentation for the [project website](https://mhproto.ignxt.chatgpt.site/docs/).
 
 ## Start locally
 
