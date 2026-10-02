@@ -1,6 +1,6 @@
 {
   "name": "@bive/cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Behaviour, Interface, Verification and Examples for humans and coding agents",
   "type": "module",
   "bin": {
@@ -14,6 +14,7 @@
     "src",
     "viewer",
     "skills",
+    "doc",
     "README.md"
   ],
   "scripts": {

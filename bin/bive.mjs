@@ -92,7 +92,10 @@ try {
   } else if (command === 'build') {
     const destination = path.resolve(root, option('out', '.bive/viewer'));
     await exportViewer(root, destination);
-    console.log(`Exported viewer: ${destination}. Serve this folder over HTTP to inspect it.`);
-  } else if (command === 'help' || has('help')) console.log('BIVE 0.1\n\nCommands: init, skills, check, inspect, verify, view, snapshot, diff, build\n\nOptions: --root PATH, --json (check), --capability ID (verify), --port PORT (view),\n         --agent codex|claude|all (init/skills), --no-skills (init),\n         --out PATH (snapshot/build), --against PATH (diff)');
+    console.log(`Exported viewer: ${destination}. Open viewer.html directly or serve this folder over HTTP.`);
+  } else if (command === 'help' || has('help')) {
+    const { version } = JSON.parse(await readFile(path.join(packageRoot, 'package.json'), 'utf8'));
+    console.log(`BIVE ${version}\n\nCommands: init, skills, check, inspect, verify, view, snapshot, diff, build\n\nOptions: --root PATH, --json (check), --capability ID (verify), --port PORT (view),\n         --agent codex|claude|all (init/skills), --no-skills (init),\n         --out PATH (snapshot/build), --against PATH (diff)`);
+  }
   else throw new Error(`Unknown command: ${command}`);
 } catch (error) { console.error(`BIVE: ${error.message}`); process.exitCode = 1; }

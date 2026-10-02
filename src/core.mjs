@@ -96,6 +96,7 @@ async function loadCapability(root, definition) {
   catch (error) { if (error.code !== 'ENOENT') throw error; }
   return {
     ...definition, prose, rules: extractRules(prose), openapi: doc, operations: operationList(doc),
+    files: { spec: definition.spec, interface: definition.interface, examples: definition.examples, checks: definition.checks },
     transitions: doc['x-phase-transitions'] ?? [],
     nonTransitions: doc['x-phase-unchanged-by'] ?? [],
     examples, checks, digest,

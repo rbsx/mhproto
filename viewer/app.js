@@ -1,105 +1,210 @@
 const $ = selector => document.querySelector(selector);
+const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+const text = value => escape(value).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+const raw = value => `<pre>${escape(JSON.stringify(value, null, 2))}</pre>`;
 const embedded = $('#bive-model') ? JSON.parse($('#bive-model').textContent) : null;
-const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const json = value => `<pre>${escape(JSON.stringify(value, null, 2))}</pre>`;
-let project, capability, tab = 'Overview', query = '', signature, diff;
-const tabs = ['Overview', 'Behaviour', 'Interface', 'Examples', 'Verification', 'Changes', 'Sources'];
+const tabs = ['Behaviour', 'API', 'Checks', 'Changes'];
+let project, capability, tab = 'Behaviour', query = '', signature, diff;
+let checksFilter = 'attention', trail = [], restoreFocus;
 const selected = () => project.capabilities.find(c => c.id === capability) ?? project.capabilities[0];
-const tag = (text, cls = '') => `<span class="tag ${cls}">${escape(text)}</span>`;
-const link = (kind, id, label = id) => `<button data-kind="${escape(kind)}" data-id="${escape(id)}">${escape(label)}</button>`;
-const match = value => !query || JSON.stringify(value).toLowerCase().includes(query.toLowerCase());
+const matches = value => !query || JSON.stringify(value).toLowerCase().includes(query.toLowerCase());
+const clean = value => String(value ?? '').replace(/`/g, '').replace(/\*\*/g, '');
+const firstLine = value => clean(String(value ?? '').split('\n')[0]);
+const short = (value, length = 150) => value.length > length ? value.slice(0, length - 1).trim() + '…' : value;
+const ruleTitle = (cap, rule) => cap.presentation?.ruleTitles?.[rule.id] ?? short(firstLine(rule.text));
+const checkTitle = check => (check.title ?? check.id).replace(/^(?:[A-Z][A-Z0-9.-]+\s+)+/, '');
+const link = (kind, id, label = id) => `<a href="#${escape(selected().id)}/${tab.toLowerCase()}/${escape(kind)}/${encodeURIComponent(id)}" data-kind="${escape(kind)}" data-id="${escape(id)}">${escape(label)}</a>`;
+const disclosure = (title, body, open = false) => `<details class="related"${open ? ' open' : ''}><summary>${escape(title)}</summary><div class="related-body">${body}</div></details>`;
+
 function result(cap, check) {
-  const evidence = cap.evidence;
-  if (!evidence) return { status: 'unchecked' };
-  if (evidence.stale || evidence.changedDuringRun) return { status: 'stale' };
-  return evidence.results.find(r => r.id === check.id) ?? { status: 'unchecked' };
+  if (!cap.evidence) return { status: 'unchecked' };
+  if (cap.evidence.stale || cap.evidence.changedDuringRun) return { status: 'stale' };
+  return cap.evidence.results.find(r => r.id === check.id) ?? { status: 'unchecked' };
 }
-function ruleLinks(cap, id) {
-  return `<div class="links">${cap.operations.filter(o=>o.rules.includes(id)).map(o=>link('operation',o.operationId,o.method+' '+o.path)).join('')}${cap.examples.filter(e=>e.rules?.includes(id)).map(e=>link('example',e.id)).join('')}${cap.checks.filter(c=>c.rules?.includes(id)).map(c=>link('check',c.id,`${c.id} · ${result(cap,c).status}`)).join('')}</div>`;
+function statusLabel(status) { return ({ passing:'Passed', failing:'Failed', stale:'Needs a new run', unchecked:'Not run' })[status] ?? status; }
+function row(kind, id, title, meta = '', status = '') {
+  return `<button class="item-row" data-kind="${escape(kind)}" data-id="${escape(id)}"><span class="item-main"><span class="item-title">${escape(title)}</span>${meta ? `<span class="item-meta">${escape(meta)}</span>` : ''}</span>${status ? `<span class="row-status ${escape(status)}">${statusLabel(status)}</span>` : ''}<span class="row-arrow" aria-hidden="true">↗</span></button>`;
 }
-function ruleCard(cap, r) {
-  return `<article class="card"><div class="card-heading"><span class="rule-id">${escape(r.id)}</span>${tag(cap.checks.some(c=>c.rules?.includes(r.id)) ? 'Check linked' : 'No check linked')}</div><div class="rule-text">${escape(r.text)}</div>${ruleLinks(cap,r.id)}</article>`;
-}
-function exampleCard(cap,e) {
-  return `<article class="card"><span class="rule-id">${escape(e.id)}</span><h2>${escape(e.title ?? e.id)}</h2>${['given','when','then'].map(k=>`<div class="scenario"><b>${k.toUpperCase()}</b><span>${escape(e[k])}</span></div>`).join('')}<div class="links">${(e.rules??[]).map(id=>link('rule',id)).join('')}${(e.operations??[]).map(id=>link('operation',id)).join('')}${cap.checks.filter(c=>c.examples?.includes(e.id)).map(c=>link('check',c.id,c.id+' · '+result(cap,c).status)).join('')}</div>${e.request?`<details><summary>Request / response example</summary>${json({request:e.request,response:e.response})}</details>`:''}</article>`;
-}
-function schema(cap, object, depth = 0, visited = []) {
-  if (!object) return '<span class="muted">No body</span>';
-  if (object.$ref) {
-    const name = object.$ref.split('/').at(-1);
-    if (visited.includes(name) || depth > 5) return link('schema',name);
-    return `<div>${link('schema',name)}${schema(cap,cap.openapi.components?.schemas?.[name],depth+1,[...visited,name])}</div>`;
+
+function ruleGroups(cap) {
+  const sections = new Map();
+  let heading = 'Rules';
+  for (const line of cap.prose.split('\n')) {
+    if (/^##\s/.test(line)) heading = line.replace(/^##\s+/, '').replace(/^[A-Z][A-Z0-9-]*\s*[—–-]\s*/, '');
+    const id = /^\s*-\s+\*\*([A-Z][A-Z0-9-]*-\d+)\*\*/.exec(line)?.[1];
+    if (id) sections.set(id, heading);
   }
-  if (object.anyOf || object.oneOf) return `<div>${(object.anyOf??object.oneOf).map(s=>schema(cap,s,depth+1,visited)).join('<div class="muted">or</div>')}</div>`;
-  if (object.type === 'array') return `<div>${tag('array')}${schema(cap,object.items,depth+1,visited)}</div>`;
-  if (object.properties) return `<div class="schema-properties">${Object.entries(object.properties).map(([name,s])=>`<div class="schema-field"><code>${escape(name)}</code> ${tag((object.required??[]).includes(name)?'required':'optional')}${schema(cap,s,depth+1,visited)}${s.description?`<p>${escape(s.description)}</p>`:''}</div>`).join('')}</div>`;
-  return `<span class="mono">${escape(object.type??(object.const!==undefined?'const':'value'))}</span> ${object.enum?tag(object.enum.join(' | ')):''}${object.const!==undefined?tag(JSON.stringify(object.const)):''}${object.format?tag(object.format):''}${object.minimum!==undefined?tag('min '+object.minimum):''}${object.maximum!==undefined?tag('max '+object.maximum):''}${object.maxLength!==undefined?tag('max length '+object.maxLength):''}`;
+  const labels = cap.presentation?.sectionTitles ?? {};
+  const groups = new Map();
+  for (const rule of cap.rules) {
+    const section = sections.get(rule.id) ?? 'Rules';
+    const label = labels[section] ?? section.charAt(0).toUpperCase() + section.slice(1);
+    if (!groups.has(label)) groups.set(label, []);
+    groups.get(label).push(rule);
+  }
+  const entry = cap.presentation?.entrySection;
+  return [...groups].sort(([a],[b]) => a === entry ? -1 : b === entry ? 1 : 0);
 }
-function opDetail(cap,op) {
-  const media = op.requestBody?.content?.['application/json'];
-  return `<div class="operation-title"><span class="method ${op.method.toLowerCase()}">${escape(op.method)}</span>${escape(op.path)}</div><p class="muted">${escape(op.summary)}</p><div class="links">${op.rules.map(id=>link('rule',id)).join('')}</div>${op.parameters.length?`<h3 class="section-title">Parameters</h3>${json(op.parameters)}`:''}<h3 class="section-title">Request</h3>${schema(cap,media?.schema)}${media?.example?`<details><summary>Example payload</summary>${json(media.example)}</details>`:''}<h3 class="section-title">Responses</h3>${Object.entries(op.responses).map(([status,res])=>`<div class="card"><h2>${escape(status)} · ${escape(res.description)}</h2>${schema(cap,res.content?.['application/json']?.schema)}${res.content?.['application/json']?.example?`<details><summary>Example payload</summary>${json(res.content['application/json'].example)}</details>`:''}${res['x-error-codes']?json(res['x-error-codes']):''}</div>`).join('')}${op['x-preconditions']?.length?`<h3 class="section-title">Preconditions</h3>${json(op['x-preconditions'])}`:''}`;
+
+function behaviour(cap) {
+  const phases = [...new Set(cap.transitions.flatMap(t => [t.from, t.to]).filter(Boolean))];
+  const flow = phases.length ? `<p class="section-caption">How it works</p><ol class="phases">${phases.map((phase,i)=>`<li><span class="phase-number">${i+1}</span>${escape(phase.charAt(0).toUpperCase()+phase.slice(1))}</li>`).join('')}</ol>` : '';
+  return flow + ruleGroups(cap).map(([name,rules],index) => `<details class="rule-group"${index===0?' open':''}><summary>${escape(name)}<span class="count">${rules.length}</span></summary><div>${rules.map(r => row('rule',r.id,ruleTitle(cap,r))).join('')}</div></details>`).join('');
 }
+
+function api(cap) {
+  return `<p class="intro">Choose an endpoint to inspect its inputs, outputs and linked behaviour.</p><div class="stack-list">${cap.operations.map(op=>`<button class="item-row" data-kind="operation" data-id="${escape(op.operationId)}"><span class="item-main"><span class="endpoint"><span class="method">${escape(op.method)}</span><span class="endpoint-path">${escape(op.path)}</span></span><span class="op-summary">${escape(op.summary??op.operationId)}</span></span><span class="row-arrow" aria-hidden="true">↗</span></button>`).join('')}</div><details class="secondary-disclosure"><summary>Browse shared types</summary><div class="types-list">${Object.keys(cap.openapi.components?.schemas??{}).map(name=>link('schema',name)).join('')}</div></details>`;
+}
+
+function checks(cap) {
+  const passing = cap.checks.filter(c=>result(cap,c).status==='passing').length;
+  const gaps = cap.rules.filter(r=>!cap.checks.some(c=>c.rules?.includes(r.id)));
+  const attention = cap.checks.filter(c=>result(cap,c).status!=='passing');
+  const report = cap.evidence ? `${passing} of ${cap.checks.length} checks have current passing evidence.` : 'No verification run recorded.';
+  const filters = `<div class="section-toggle"><button data-filter="attention" aria-pressed="${checksFilter==='attention'}">Needs attention${attention.length+gaps.length?' · '+(attention.length+gaps.length):''}</button><button data-filter="all" aria-pressed="${checksFilter==='all'}">All checks</button></div>`;
+  const rows = (checksFilter==='all'?cap.checks:attention).map(c=>row('check',c.id,checkTitle(c),'',result(cap,c).status)).join('');
+  const missing = checksFilter==='attention' && gaps.length ? `<h2 class="quiet-heading">Rules without a check</h2><div class="stack-list">${gaps.map(r=>row('rule',r.id,ruleTitle(cap,r))).join('')}</div>` : '';
+  const empty = !rows&&!missing ? '<div class="empty"><strong>No checks need attention.</strong>Passing checks are available in All checks.</div>' : '';
+  return `<p class="intro">${escape(report)}${gaps.length?` <strong>${gaps.length} rules have no linked check.</strong>`:''}</p>${filters}${rows?`<div class="stack-list">${rows}</div>`:''}${missing}${empty}<details class="secondary-disclosure"><summary>What these checks establish</summary><p>Each result describes an observed run against the tracked sources. It does not prove every case of a rule. Changes to those sources make the evidence stale.</p>${(cap.gaps??[]).map(g=>`<p>${escape(g)}</p>`).join('')}</details>`;
+}
+
+function changes(cap) {
+  if (!diff?.available) return '<div class="empty"><strong>No comparison available.</strong>A saved baseline is needed to review changes.</div>';
+  const items = diff.changes.filter(c=>c.capability===cap.id);
+  if (!items.length) return '<div class="empty"><strong>No contract changes.</strong>This capability matches the saved baseline.</div>';
+  return `<p class="intro">${items.length} ${items.length===1?'item differs':'items differ'} from the baseline. Open one to review what changed.</p><div class="stack-list">${items.map((c,i)=>row('change',String(i),c.kind==='rule'?short(firstLine(c.after?.text??c.before?.text??c.id)):c.kind==='check'?checkTitle(c.after??c.before):c.id,`${c.kind} · ${c.status}`)).join('')}</div>`;
+}
+
+function search(cap) {
+  const groups = [
+    ['Rules',cap.rules.filter(r=>matches(r)||matches(ruleTitle(cap,r))).map(r=>row('rule',r.id,ruleTitle(cap,r),r.id))],
+    ['API',cap.operations.filter(matches).map(o=>row('operation',o.operationId,o.method+' '+o.path,o.summary))],
+    ['Examples',cap.examples.filter(matches).map(e=>row('example',e.id,e.title??e.id))],
+    ['Checks',cap.checks.filter(matches).map(c=>row('check',c.id,checkTitle(c),'',result(cap,c).status))],
+  ];
+  return groups.filter(([,rows])=>rows.length).map(([title,rows])=>`<h2 class="quiet-heading">${title}</h2><div class="stack-list">${rows.join('')}</div>`).join('') || '<div class="empty">No matches.</div>';
+}
+
+function scenario(cap, example) {
+  return `<section class="scenario"><h3>${escape(example.title??example.id)}</h3>${['given','when','then'].map(k=>`<div class="scenario-line"><b>${k.charAt(0).toUpperCase()+k.slice(1)}</b><span>${text(example[k])}</span></div>`).join('')}${example.request?`<details class="secondary-disclosure"><summary>Payload example</summary>${raw({request:example.request,response:example.response})}</details>`:''}</section>`;
+}
+
+function ruleDetail(cap,rule) {
+  const examples = cap.examples.filter(e=>e.rules?.includes(rule.id));
+  const ops = cap.operations.filter(o=>o.rules.includes(rule.id));
+  const checks = cap.checks.filter(c=>c.rules?.includes(rule.id));
+  return `<p class="detail-id">${escape(rule.id)}</p><h2 id="detail-title">${escape(ruleTitle(cap,rule))}</h2><div class="detail-prose">${text(rule.text)}</div>${examples.length?disclosure(`Examples · ${examples.length}`,examples.map(e=>scenario(cap,e)).join(''),true):'<p class="note">No examples linked yet.</p>'}${ops.length?disclosure(`API · ${ops.length}`,`<div class="related-links">${ops.map(o=>link('operation',o.operationId,o.method+' '+o.path)).join('')}</div>`):''}${checks.length?disclosure(`Checks · ${checks.length}`,checks.map(c=>row('check',c.id,checkTitle(c),'',result(cap,c).status)).join('')):'<p class="note">This rule has no linked executable check.</p>'}`;
+}
+
+function schemaName(s) {
+  if (!s) return '—';
+  if (s.$ref) return s.$ref.split('/').at(-1);
+  if (s.enum) return s.enum.map(v=>JSON.stringify(v)).join(' | ');
+  if (s.const!==undefined) return JSON.stringify(s.const);
+  if (s.type==='array') return schemaName(s.items)+'[]';
+  if (s.oneOf||s.anyOf) return (s.oneOf??s.anyOf).map(schemaName).join(' | ');
+  return Array.isArray(s.type)?s.type.join(' | '):(s.type??'value');
+}
+function typeLink(s) {
+  const label = schemaName(s);
+  if (s?.$ref) return link('schema',label);
+  if (s?.type==='array'&&s.items?.$ref) return link('schema',schemaName(s.items),label);
+  return escape(label);
+}
+function fields(cap,s) {
+  if (!s) return '<p class="muted">No body.</p>';
+  const schema = s.$ref ? cap.openapi.components?.schemas?.[schemaName(s)] : s;
+  if (!schema?.properties) return `<p class="muted">${typeLink(s)}</p>`;
+  return `<table class="table"><thead><tr><th>Field</th><th>Type</th><th></th></tr></thead><tbody>${Object.entries(schema.properties).map(([name,p])=>`<tr><td><code>${escape(name)}</code>${p.description?`<div class="field-note">${escape(p.description)}</div>`:''}</td><td class="type-link">${typeLink(p)}${p.minimum!==undefined?`<div class="field-note">min ${escape(p.minimum)}</div>`:''}${p.maximum!==undefined?`<div class="field-note">max ${escape(p.maximum)}</div>`:''}</td><td class="field-flags">${(schema.required??[]).includes(name)?'Required':'Optional'}</td></tr>`).join('')}</tbody></table>`;
+}
+function operationDetail(cap,op) {
+  const request = op.requestBody?.content?.['application/json'];
+  const responses = Object.entries(op.responses??{});
+  const parameters = op.parameters.length ? `<h3 class="quiet-heading">Parameters</h3><table class="table"><thead><tr><th>Name</th><th>Location</th><th>Type</th></tr></thead><tbody>${op.parameters.map(p=>`<tr><td><code>${escape(p.name)}</code>${p.description?`<div class="field-note">${escape(p.description)}</div>`:''}</td><td>${escape(p.in)}</td><td>${escape(schemaName(p.schema))}</td></tr>`).join('')}</tbody></table>` : '';
+  return `<p class="detail-id">${escape(op.operationId)}</p><h2 id="detail-title"><span class="method">${escape(op.method)}</span> ${escape(op.path)}</h2><p class="intro">${escape(op.summary??'')}</p>${parameters}<h3 class="quiet-heading">Request body</h3>${fields(cap,request?.schema)}${request?.example?disclosure('Request example',raw(request.example)):''}<h3 class="quiet-heading">Responses</h3>${responses.map(([status,res],i)=>disclosure(`${status} · ${short(clean(res.description??''),95)}`,fields(cap,res.content?.['application/json']?.schema)+(res['x-error-codes']?`<div class="stack-list">${res['x-error-codes'].map(e=>`<p class="muted"><code>${escape(e.code)}</code> ${escape(e.when??'')}${e.clause?' · '+link('rule',e.clause,'Behaviour'):''}</p>`).join('')}</div>`:'')+(res.content?.['application/json']?.example?`<details class="secondary-disclosure"><summary>Response example</summary>${raw(res.content['application/json'].example)}</details>`:''),i===0&&/^2/.test(status))).join('')}${op.rules.length?disclosure('Related behaviour',`<div class="related-links">${op.rules.map(id=>link('rule',id,short(firstLine(cap.rules.find(r=>r.id===id)?.text??id),90))).join('')}</div>`):''}${op['x-preconditions']?.length?disclosure('Preconditions',op['x-preconditions'].map(p=>`<p class="muted">${escape(p.needs)}${p.fails?.code?' → '+escape(p.fails.code):''}</p>`).join('')):''}${disclosure('Raw OpenAPI',raw(op))}`;
+}
+
 function checkDetail(cap,check) {
   const r = result(cap,check);
-  return `<span class="rule-id">${escape(check.id)}</span><h2>${escape(check.title??check.id)}</h2>${tag(r.status,r.status)}<p class="muted">${escape(check.description??'')}</p><div class="links">${(check.rules??[]).map(id=>link('rule',id)).join('')}${(check.examples??[]).map(id=>link('example',id)).join('')}</div><h3 class="section-title">Command</h3>${json(check.command)}${check.testNames?`<h3 class="section-title">Required tests</h3>${json(check.testNames)}`:''}${r.tests?`<h3 class="section-title">Observed test results</h3>${json(r.tests)}`:''}${r.stderr?`<h3 class="section-title">Error output</h3>${json(r.stderr)}`:''}${r.missing?.length?json({missing:r.missing}):''}<p class="muted">A passing check is evidence for the linked rules, rather than proof of every possible behaviour.</p>`;
+  const expected = new Set(check.testNames??[]);
+  const tests = (r.tests??[]).filter(t=>expected.has(t.name)||t.type==='test:fail');
+  return `<p class="detail-id">${escape(check.id)}</p><h2 id="detail-title">${escape(checkTitle(check))}</h2><div class="status-line"><span class="status-dot ${r.status}"></span><span class="${r.status==='failing'?'result-failing':''}">${statusLabel(r.status)}</span></div><p class="intro">${escape(check.description??'')}</p>${r.status==='stale'?'<p class="note">The tracked spec or implementation changed after this run. Run the check again to refresh its evidence.</p>':''}${tests.length?disclosure('Observed tests',tests.map(t=>`<p class="muted">${t.skip?'Skipped':t.type==='test:fail'?'Failed':'Passed'} · ${escape(t.name)}${t.message?'<br>'+escape(t.message):''}</p>`).join(''),r.status==='failing'):''}${r.missing?.length?`<p class="error">Expected tests did not run: ${escape(r.missing.join(', '))}</p>`:''}${check.rules?.length?disclosure('Related behaviour',`<div class="related-links">${check.rules.map(id=>link('rule',id,short(firstLine(cap.rules.find(r=>r.id===id)?.text??id),90))).join('')}</div>`):''}${check.examples?.length?disclosure('Examples',check.examples.map(id=>scenario(cap,cap.examples.find(e=>e.id===id))).join('')):''}${disclosure('Run details',raw({command:check.command,startedAt:r.startedAt,durationMs:r.durationMs,exitCode:r.exitCode}))}${r.stderr?disclosure('Error output',`<pre>${escape(r.stderr)}</pre>`,r.status==='failing'):''}<p class="note">A passing check is evidence for the linked behaviour, with the scope of the observed tests.</p>`;
 }
-function overview(cap) {
-  const linked = cap.rules.filter(r=>cap.checks.some(c=>c.rules?.includes(r.id))).length;
-  return `<div class="grid"><div><article class="card"><h2>The capability</h2><p>${escape(cap.description??cap.prose.split('\n\n').find(p=>!p.startsWith('#')&&!p.startsWith('Status:'))??'')}</p>${tag('Behaviour')}${tag('Interface')}${tag('Verification')}${tag('Examples')}<p>${escape(cap.owner?'Owner · '+cap.owner:'Owner not recorded')}</p></article><article class="card"><h2>States & transitions</h2>${cap.transitions.length?cap.transitions.map(t=>`<div class="transition">${tag(t.from??t.phase??'?')}<span>→</span>${tag(t.to??'?')}<small>${escape(t.on??t.when??t.trigger??t.operation??'')}</small><div class="links">${link('rule',t.clause)}</div></div>`).join(''):'<p>No structured transitions supplied.</p>'}<p>Full state and recovery semantics live in Behaviour.</p></article><article class="card"><h2>System map</h2><div class="rule-text">${escape(project.system)}</div></article></div><div><article class="card"><h2>Evidence, with its limits</h2><p>${linked} of ${cap.rules.length} rules have linked checks. ${cap.rules.length-linked} have no executable check.</p><table class="table"><thead><tr><th>Check</th><th>Latest evidence</th></tr></thead><tbody>${cap.checks.map(c=>`<tr><td><button class="link" data-kind="check" data-id="${escape(c.id)}">${escape(c.title??c.id)}</button></td><td>${tag(result(cap,c).status,result(cap,c).status)}</td></tr>`).join('')}</tbody></table><p>Evidence is tied to a digest of the spec, tests and tracked implementation. Changes make it stale.</p></article><article class="card"><h2>Open gaps</h2>${(cap.gaps??[]).map(g=>`<p>• ${escape(g)}</p>`).join('')}${project.issues.filter(i=>i.capability===cap.id).slice(0,7).map(i=>`<p>${tag(i.level)} ${escape(i.message)}</p>`).join('')}</article></div></div>`;
+
+function changeDetail(change) {
+  const summary = value => change.kind==='rule' ? `<div class="comparison-text">${text(value?.text??'No rule')}</div>` : change.kind==='example' ? (value?scenario(selected(),value):'<p class="muted">No example</p>') : `<div class="comparison-text">${escape(value ? (value.summary??value.title??value.name??change.id) : 'Not present')}</div>`;
+  return `<p class="detail-id">${escape(change.kind)} · ${escape(change.status)}</p><h2 id="detail-title">${escape(change.id)}</h2><section class="comparison"><p class="comparison-label">Before</p>${summary(change.before)}</section><section class="comparison"><p class="comparison-label">After</p>${summary(change.after)}</section>${change.kind!=='rule'&&change.kind!=='example'?disclosure('Full change',raw({before:change.before,after:change.after})):''}`;
 }
+
+function sourcesDetail(cap) {
+  return `<h2 id="detail-title">Sources</h2><p class="intro">This view reads the capability’s existing files. Edit them in your editor or through your agent.</p><table class="table"><tbody>${Object.entries({Behaviour:cap.files.spec,Interface:cap.files.interface,Examples:cap.files.examples,Checks:cap.files.checks}).map(([label,file])=>`<tr><td>${label}</td><td><code>${escape(file)}</code></td></tr>`).join('')}</tbody></table>${disclosure('Tracked implementation',raw(cap.sources))}${disclosure('Verification metadata',raw({fingerprint:cap.digest,latestRun:cap.evidence?.finishedAt??null}))}${disclosure('Complete behaviour document',`<div class="detail-prose">${text(cap.prose)}</div>`)}${disclosure('Local commands','<pre>bive check\nbive verify --capability '+escape(cap.id)+'\nbive snapshot\nbive view</pre>')}`;
+}
+
+function renderDetail() {
+  const cap = selected(), item = trail.at(-1);
+  if (!item) return;
+  const {kind,id}=item;
+  let body;
+  if(kind==='rule'){const r=cap.rules.find(r=>r.id===id);if(r)body=ruleDetail(cap,r);}
+  if(kind==='operation'){const op=cap.operations.find(o=>o.operationId===id);if(op)body=operationDetail(cap,op);}
+  if(kind==='example'){const e=cap.examples.find(e=>e.id===id);if(e)body=`<p class="detail-id">${escape(e.id)}</p><h2 id="detail-title">${escape(e.title??e.id)}</h2>${scenario(cap,e)}${disclosure('Related behaviour',`<div class="related-links">${(e.rules??[]).map(id=>link('rule',id)).join('')}</div>`)}`;}
+  if(kind==='check'){const c=cap.checks.find(c=>c.id===id);if(c)body=checkDetail(cap,c);}
+  if(kind==='schema'){const s=cap.openapi.components?.schemas?.[id];if(s)body=`<p class="detail-id">Shared type</p><h2 id="detail-title">${escape(id)}</h2>${fields(cap,s)}${disclosure('JSON Schema',raw(s))}`;}
+  if(kind==='change'){const c=diff?.changes.filter(c=>c.capability===cap.id)[Number(id)];if(c)body=changeDetail(c);}
+  if(kind==='sources')body=sourcesDetail(cap);
+  if(kind==='system')body=`<h2 id="detail-title">System map</h2><div class="detail-prose">${text(project.system)}</div>`;
+  $('#detail-content').innerHTML=body??'<h2 id="detail-title">Item not found</h2><p class="muted">It may have changed in the source files.</p>';
+  $('#detail-label').textContent=({rule:'Behaviour',operation:'API',example:'Example',check:'Check',schema:'Type',change:'Change',sources:'Workspace',system:'Workspace'})[kind]??'';
+  $('#detail-back').hidden=trail.length<2;
+  $('#detail').scrollTop=0;
+}
+function openDetail(kind,id) {
+  if(!$('#detail').open)restoreFocus=document.activeElement;
+  trail.push({kind,id});renderDetail();
+  if(!$('#detail').open)$('#detail').showModal();
+}
+function closeDetail() { $('#detail').close();trail=[];restoreFocus?.focus(); }
+
 function render() {
-  const cap = selected();
-  $('#project-name').textContent = project.name;
-  $('#capabilities').innerHTML = project.capabilities.map(c=>`<button data-capability="${escape(c.id)}" class="${c.id===cap.id?'active':''}">${escape(c.title??c.id)}</button>`).join('');
-  $('#title').textContent = cap.title??cap.id;
-  $('#breadcrumb').textContent = 'WORKSPACE / '+cap.id.toUpperCase();
-  $('#subtitle').textContent = cap.description??'Behaviour, interfaces and evidence in one place.';
-  const statuses = cap.checks.map(c=>result(cap,c).status);
-  const status = statuses.includes('stale')?'stale':statuses.includes('failing')?'failing':statuses.length&&statuses.every(s=>s==='passing')?'passing':'unchecked';
-  $('#freshness').className = 'pill '+status;
-  $('#freshness').textContent = status === 'passing'?'Linked checks passing':status==='stale'?'Evidence stale':status==='failing'?'A check is failing':'Evidence unchecked';
-  $('#stats').innerHTML = [[cap.rules.length,'Behaviour rules'],[cap.operations.length,'Interface operations'],[cap.examples.length,'Concrete scenarios'],[statuses.filter(s=>s==='passing').length+' / '+cap.checks.length,'Checks with current passing evidence']].map(([n,label])=>`<div class="stat"><strong>${n}</strong><span>${label}</span></div>`).join('');
-  $('#tabs').innerHTML = tabs.map(t=>`<button data-tab="${t}" class="${t===tab?'active':''}">${t}</button>`).join('');
-  let content = '';
-  if(tab==='Overview') content=overview(cap);
-  if(tab==='Behaviour') content=cap.rules.filter(match).map(r=>ruleCard(cap,r)).join('');
-  if(tab==='Interface') content=`<div class="grid"><div>${cap.operations.filter(match).map(o=>`<article class="card"><div class="operation-title"><span class="method ${o.method.toLowerCase()}">${escape(o.method)}</span>${escape(o.path)}</div><p class="op-summary">${escape(o.summary)}</p><div class="links">${link('operation',o.operationId,'Inspect types & errors')}${o.rules.map(id=>link('rule',id)).join('')}</div></article>`).join('')}</div><article class="card"><h2>Shared schemas</h2>${Object.entries(cap.openapi.components?.schemas??{}).filter(match).map(([name,s])=>`<p><button class="link" data-kind="schema" data-id="${escape(name)}">${escape(name)}</button> ${tag(s.type??'union')}</p>`).join('')}<p>OpenAPI ${escape(cap.openapi.openapi)} · read from ${escape(cap.interface)}</p></article></div>`;
-  if(tab==='Examples') content=cap.examples.filter(match).map(e=>exampleCard(cap,e)).join('');
-  if(tab==='Verification') content=`<div class="note">Passing checks describe the observed run. Unlinked rules remain unchecked; stale evidence needs a new run. Prompt-text checks cannot establish live model behaviour.</div>${cap.checks.filter(match).map(c=>`<article class="card"><div class="card-heading"><h2>${escape(c.title??c.id)}</h2>${tag(result(cap,c).status,result(cap,c).status)}</div><p>${escape(c.description??'')}</p><div class="links">${link('check',c.id,'Inspect evidence')}${(c.rules??[]).map(id=>link('rule',id)).join('')}${(c.examples??[]).map(id=>link('example',id)).join('')}</div></article>`).join('')}<article class="card"><h2>Rules without executable checks</h2><div class="links">${cap.rules.filter(r=>!cap.checks.some(c=>c.rules?.includes(r.id))).map(r=>link('rule',r.id)).join('')}</div></article>`;
-  if(tab==='Changes') content=diff?.available?`<p class="muted">Compared with the saved baseline. Review intended changes before implementation.</p>${diff.changes.filter(c=>c.capability===cap.id).map(c=>`<article class="card"><h2>${escape(c.id)} ${tag(c.status)}</h2><div class="grid"><div><span class="rule-id">BEFORE</span>${json(c.before)}</div><div><span class="rule-id">AFTER</span>${json(c.after)}</div></div></article>`).join('')||'<article class="card"><h2>No contract changes</h2><p>Current rules, schemas, examples and checks match the baseline.</p></article>'}`:'<article class="card"><h2>No baseline saved</h2><p>Run <code>bive snapshot</code> before proposing a contract change.</p></article>';
-  if(tab==='Sources') content=`<article class="card"><h2>Contract sources</h2>${json({behaviour:cap.spec,interface:cap.interface,examples:cap.examples,verification:cap.checks,trackedImplementation:cap.sources})}<p>Fingerprint <code>${escape(cap.digest.slice(0,16))}</code></p><p>Latest run ${escape(cap.evidence?.finishedAt??'not recorded')}</p></article><article class="card"><h2>Complete behaviour document</h2><div class="rule-text">${escape(cap.prose)}</div></article>`;
-  $('#content').innerHTML=content||'<div class="empty">No matches.</div>';
-  const url = new URL(location);url.hash=cap.id+'/'+tab.toLowerCase();history.replaceState(null,'',url);
+  const cap=selected();capability=cap.id;
+  $('#project-name').textContent=project.name;
+  $('#capabilities').innerHTML=project.capabilities.map(c=>`<button data-capability="${escape(c.id)}" class="${c.id===cap.id?'active':''}">${escape(c.title??c.id)}</button>`).join('');
+  $('#breadcrumb').textContent='Capability';
+  $('#title').textContent=cap.title??cap.id;
+  $('#subtitle').textContent=cap.description??'The agreed behaviour and interfaces for this capability.';
+  $('#tabs').innerHTML=tabs.map(t=>`<button data-tab="${t}" class="${t===tab?'active':''}" aria-current="${t===tab?'page':'false'}">${t}</button>`).join('');
+  $('#content').innerHTML=query?search(cap):({Behaviour:behaviour,API:api,Checks:checks,Changes:changes}[tab])(cap);
+  $('#freshness').textContent=cap.evidence?.stale?'Evidence needs a new run':cap.evidence?'Latest run · '+new Date(cap.evidence.finishedAt).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):'No verification run recorded';
+  $('#view-mode').textContent=embedded?'Exported snapshot':'Local workspace';
+  $('#read-mode').textContent=embedded?'Snapshot · read-only':'Read-only';
+  const url=new URL(location);url.hash=cap.id+'/'+tab.toLowerCase();history.replaceState(null,'',url);
+  if($('#detail').open)renderDetail();
 }
+
 document.addEventListener('click',event=>{
-  const button=event.target.closest('button');if(!button)return;
-  if(button.dataset.capability){capability=button.dataset.capability;render();return;}
-  if(button.dataset.tab){tab=button.dataset.tab;render();return;}
-  if(button.classList.contains('close')){$('#detail').close();return;}
-  const kind=button.dataset.kind,id=button.dataset.id,cap=selected();if(!kind)return;
-  let html;
-  if(kind==='rule'){const r=cap.rules.find(r=>r.id===id);html=r?ruleCard(cap,r):'<p>Rule not found</p>';}
-  if(kind==='operation'){const o=cap.operations.find(o=>o.operationId===id);html=o?opDetail(cap,o):'<p>Operation not found</p>';}
-  if(kind==='example'){const e=cap.examples.find(e=>e.id===id);html=e?exampleCard(cap,e):'<p>Example not found</p>';}
-  if(kind==='check'){const c=cap.checks.find(c=>c.id===id);html=c?checkDetail(cap,c):'<p>Check not found</p>';}
-  if(kind==='schema')html=`<h2>${escape(id)}</h2>${schema(cap,cap.openapi.components?.schemas?.[id],0,[id])}<details><summary>JSON Schema</summary>${json(cap.openapi.components?.schemas?.[id])}</details>`;
-  $('#detail-content').innerHTML=html;if(!$('#detail').open)$('#detail').showModal();
+  const control=event.target.closest('[data-kind],[data-tab],[data-capability],[data-filter],.close,#detail-back');if(!control)return;
+  if(control.tagName==='A')event.preventDefault();
+  if(control.dataset.kind){openDetail(control.dataset.kind,control.dataset.id);return;}
+  if(control.classList.contains('close')){closeDetail();return;}
+  if(control.id==='detail-back'){trail.pop();renderDetail();return;}
+  if(control.dataset.capability){capability=control.dataset.capability;query='';$('#search').value='';tab='Behaviour';trail=[];render();return;}
+  if(control.dataset.tab){tab=control.dataset.tab;query='';$('#search').value='';render();return;}
+  if(control.dataset.filter){checksFilter=control.dataset.filter;render();}
 });
-$('#search').addEventListener('input',event=>{query=event.target.value;if(query&&tab==='Overview')tab='Behaviour';render();});
-async function refresh(initial=false){
-  try{
-    if(embedded){project=embedded;diff=JSON.parse($('#bive-diff').textContent);const [id,section]=location.hash.slice(1).split('/');capability=id;tab=tabs.find(t=>t.toLowerCase()===section)??'Overview';render();return;}
+$('#detail').addEventListener('cancel',()=>{trail=[];});
+$('#search').addEventListener('input',event=>{query=event.target.value;render();});
+document.addEventListener('keydown',event=>{if(event.key==='/'&&!$('#detail').open&&!['INPUT','TEXTAREA'].includes(document.activeElement.tagName)){event.preventDefault();$('#search').focus();}});
+function initialRoute() { const [id,view]=location.hash.slice(1).split('/');capability=id;tab=tabs.find(t=>t.toLowerCase()===view)??'Behaviour'; }
+async function refresh(initial=false) {
+  try {
+    if(embedded){project=embedded;diff=JSON.parse($('#bive-diff').textContent);initialRoute();render();return;}
     let response=await fetch('/api/model');
     if(!response.ok)response=await fetch('./model.json');
-    if(!response.ok)throw new Error('Could not load contract');
+    if(!response.ok)throw new Error('Could not load the capability');
     const next=await response.json();if(next.error)throw new Error(next.error);
     const nextSignature=JSON.stringify(next);
-    if(initial||nextSignature!==signature){
-      project=next;signature=nextSignature;
-      if(initial){const [id,section]=location.hash.slice(1).split('/');capability=id;tab=tabs.find(t=>t.toLowerCase()===section)??'Overview';}
-      try{diff=await(await fetch('/api/diff')).json();}catch{diff=null;}
-      render();
-    }
-  }catch(e){if(initial)$('#content').innerHTML=`<div class="error">${escape(e.message)}</div>`;else{$('#freshness').textContent='Source read failed';$('#freshness').className='pill failing';}}
+    if(initial||nextSignature!==signature){project=next;signature=nextSignature;if(initial)initialRoute();try{diff=await(await fetch('/api/diff')).json();}catch{diff=null;}render();}
+  } catch(error) { if(initial)$('#content').innerHTML=`<p class="error">${escape(error.message)}</p>`;else $('#freshness').textContent='Source read failed'; }
 }
-await refresh(true);if(!embedded)setInterval(()=>refresh(),4000);
+await refresh(true);
+if(!embedded)setInterval(()=>refresh(),4000);

@@ -39,9 +39,19 @@ Replace the example with a real capability. `init` refuses to overwrite existing
 | verify | Run linked argv commands, store revision-bound evidence |
 | view | Serve a read-only viewer on loopback; auto-refresh source changes |
 | snapshot / diff | Save a baseline and inspect contract changes |
-| build | Export viewer assets and model.json; serve the output over HTTP |
+| build | Export viewer assets, model.json and a self-contained viewer.html |
 
 Use `--root PATH` for another app. See `bive help` for command options and `skills/bive-specify/references/format.md` for the data format.
+
+## Viewer
+
+The viewer starts with behaviour and four task-focused views: Behaviour, API, Checks and Changes. Open a rule to follow its examples, endpoints and evidence in a detail panel with Back navigation. Checks start with missing, failing or stale evidence. Nested types, raw schemas, commands and source metadata are revealed on demand.
+
+The visual system uses white backgrounds, near-black text, neutral dividers and blue/purple links. See `doc/viewer-design.md` for the flows and acceptance criteria.
+
+Optional capability `presentation` metadata controls `entrySection`, `sectionTitles` and `ruleTitles`. These are navigation labels and concise summaries; the full source rule remains authoritative in its detail view.
+
+`bive build --out ./bive-preview` creates a portable `viewer.html` that can be opened without a server. The live viewer stays read-only; edit the source files to update the contract.
 
 ## Verification semantics
 
