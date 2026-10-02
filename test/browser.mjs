@@ -12,9 +12,11 @@ import { createBrowserFixture } from './browser-fixture.mjs';
 
 const artifacts = path.join(packageRoot, 'test-results/browser');
 const apiRoute = '#/features/example/api/getStatus';
-const waitForViewer = async (page) => {
+const waitForViewer = async (page, heading) => {
   await page.waitForFunction(
-    () => globalThis.mhprotoReady && document.querySelector('#content h1'),
+    (title) =>
+      globalThis.mhprotoReady && document.querySelector('#content h1')?.textContent === title,
+    heading,
   );
   await page.evaluate(() => globalThis.mhprotoReady);
 };
@@ -36,7 +38,7 @@ async function attachLink(page, title) {
   await form.locator('[name=url]').fill('https://example.com/design');
   await form.getByRole('button', { name: 'Attach', exact: true }).click();
   await page.evaluate(() => globalThis.mhprotoAttachmentReady);
-  await waitForViewer(page);
+  await waitForViewer(page, 'GET /status');
   assert.equal(await page.locator('.visual').filter({ hasText: title }).count(), 1);
 }
 
@@ -74,7 +76,7 @@ test('browser release flows', { timeout: 120000 }, async (t) => {
             403,
           );
           await page.goto(base);
-          await waitForViewer(page);
+          await waitForViewer(page, 'Status');
           assert.equal(await page.locator('.endpoint').count(), 2);
           assert.equal(await page.locator('h1').textContent(), 'Status');
           await page.screenshot({
@@ -83,7 +85,7 @@ test('browser release flows', { timeout: 120000 }, async (t) => {
           });
           await page.locator('.endpoint[data-operation=getStatus] .endpoint-heading a').click();
           await page.waitForURL('**/' + apiRoute);
-          await waitForViewer(page);
+          await waitForViewer(page, 'GET /status');
           assert.equal(await page.locator('.diagram-canvas svg').count(), 1);
           const owner = page
             .locator('.inline-object')
@@ -105,15 +107,15 @@ test('browser release flows', { timeout: 120000 }, async (t) => {
             assert.equal(await section.locator('[data-add-visual]').count(), 1);
           await owner.locator('summary a.type-link').click();
           await page.waitForURL('**/#/features/example/types/User');
-          await waitForViewer(page);
+          await waitForViewer(page, 'User');
           assert.equal(await page.locator('h1').textContent(), 'User');
           assert.equal(await page.locator('.type-usage-list a').count(), 2);
           await page.reload();
-          await waitForViewer(page);
+          await waitForViewer(page, 'User');
           assert.equal(await page.locator('h1').textContent(), 'User');
           await page.locator('.type-usage-list a[href$="/api/getStatus"]').click();
           await page.waitForURL('**/' + apiRoute);
-          await waitForViewer(page);
+          await waitForViewer(page, 'GET /status');
           await page.locator('.io-heading').last().hover();
           if (!options.isMobile)
             assert.equal(
@@ -148,14 +150,14 @@ test('browser release flows', { timeout: 120000 }, async (t) => {
             fullPage: true,
           });
           await page.locator('#changes-link').click();
-          await waitForViewer(page);
+          await waitForViewer(page, 'Changes');
           assert.ok((await page.locator('#content').textContent()).includes('User'));
           const changedType = page
             .locator('a[href^="#/changes/"]')
             .filter({ hasText: 'User' })
             .first();
           await changedType.click();
-          await waitForViewer(page);
+          await waitForViewer(page, 'User');
           assert.ok((await page.locator('.diff-table').textContent()).includes('email'));
           await page.screenshot({
             path: path.join(artifacts, name + '-changes.png'),
@@ -190,7 +192,7 @@ test('browser release flows', { timeout: 120000 }, async (t) => {
             return route.abort();
           });
           await page.goto(offline + apiRoute);
-          await waitForViewer(page);
+          await waitForViewer(page, 'GET /status');
           assert.equal(await page.locator('.diagram-canvas svg').count(), 1);
           await attachLink(page, 'Offline design');
           const downloadEvent = page.waitForEvent('download');
@@ -200,7 +202,7 @@ test('browser release flows', { timeout: 120000 }, async (t) => {
           await download.saveAs(downloaded);
           savedHTML = await readFile(downloaded);
           await page.goto(offline + 'saved' + apiRoute);
-          await waitForViewer(page);
+          await waitForViewer(page, 'GET /status');
           assert.equal(
             await page.locator('.visual').filter({ hasText: 'Offline design' }).count(),
             1,
