@@ -1,0 +1,34 @@
+{
+  "name": "@bive/cli",
+  "version": "0.1.0",
+  "description": "Behaviour, Interface, Verification and Examples for humans and coding agents",
+  "type": "module",
+  "bin": {
+    "bive": "./bin/bive.mjs"
+  },
+  "exports": {
+    ".": "./src/core.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "viewer",
+    "skills",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "yaml": "^2.8.1"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "jsdom": "^26.1.0"
+  }
+}

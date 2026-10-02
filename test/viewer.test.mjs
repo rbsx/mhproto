@@ -1,0 +1,45 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { mkdtemp, readFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import path from 'node:path';
+import os from 'node:os';
+import { JSDOM } from 'jsdom';
+import { packageRoot } from '../src/core.mjs';
+import { exportViewer } from '../src/server.mjs';
+
+test('viewer navigates rules, interfaces, scenarios and unchecked evidence', async () => {
+  const root=await mkdtemp(path.join(os.tmpdir(),'bive-dom-'));
+  execFileSync(process.execPath,[path.join(packageRoot,'bin/bive.mjs'),'init','--root',root,'--no-skills']);
+  await exportViewer(root,path.join(root,'export'));
+  const html=await readFile(path.join(root,'export/viewer.html'),'utf8');
+  const dom=new JSDOM(html,{runScripts:'outside-only',url:'https://bive.test/'});
+  const {window}=dom;
+  // JSDOM has no layout or native modal; stub only those platform methods.
+  window.HTMLDialogElement.prototype.showModal=function(){this.setAttribute('open','');};
+  window.HTMLDialogElement.prototype.close=function(){this.removeAttribute('open');};
+  const script=window.document.querySelector('script[type="module"]').textContent;
+  await window.eval(`(async()=>{${script}\n})()`);
+  const doc=window.document;
+  const click=selector=>{const element=doc.querySelector(selector);assert.ok(element,selector);element.click();};
+  assert.equal(doc.querySelector('h1').textContent,'Example capability');
+  assert.ok(doc.querySelector('#freshness').textContent.includes('unchecked'));
+  click('[data-tab="Behaviour"]');
+  assert.ok(doc.querySelector('#content').textContent.includes('EXAMPLE-B-1'));
+  click('[data-kind="operation"]');
+  assert.ok(doc.querySelector('#detail').hasAttribute('open'));
+  assert.ok(doc.querySelector('#detail-content').textContent.includes('/status'));
+  assert.ok(doc.querySelector('#detail-content').textContent.includes('required'));
+  click('.close');click('[data-tab="Examples"]');
+  assert.ok(doc.querySelector('#content').textContent.includes('GIVEN'));
+  click('[data-tab="Verification"]');
+  assert.ok(doc.querySelector('#content').textContent.includes('EXAMPLE-B-1'));
+  click('[data-tab="Changes"]');
+  assert.ok(doc.querySelector('#content').textContent.includes('No baseline saved'));
+  click('[data-tab="Sources"]');
+  assert.ok(doc.querySelector('#content').textContent.includes('bive/interfaces/openapi.yaml'));
+  click('[data-tab="Behaviour"]');
+  const input=doc.querySelector('#search');input.value='nonexistent';input.dispatchEvent(new window.Event('input'));
+  assert.ok(doc.querySelector('#content').textContent.includes('No matches'));
+  dom.window.close();
+});
