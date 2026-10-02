@@ -1,4 +1,4 @@
-# BIVE viewer design
+# MHProto viewer design
 
 Start with the feature the developer is working on, its app route, and the data exchanged to implement it.
 

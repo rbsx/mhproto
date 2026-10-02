@@ -1,5 +1,5 @@
 // Pure contract comparison, shared by the CLI, server and browser.
-const unordered = new Set(['required','enum','type','rules','operations','examples','sources','testNames','x-bive-rules','x-clauses']);
+const unordered = new Set(['required','enum','type','rules','operations','examples','sources','testNames','x-mhproto-rules','x-clauses']);
 export function canonical(value, key='') {
   if(Array.isArray(value)){
     const items=value.map(v=>canonical(v));
@@ -9,12 +9,13 @@ export function canonical(value, key='') {
   return value;
 }
 export function snapshotProject(value) {
-  if(value?.format==='bive-snapshot'&&value.version!==1)throw new Error('Unsupported BIVE snapshot version.');
-  const project=value?.format==='bive-snapshot'?value.project:value;
-  if(!project||!Array.isArray(project.capabilities)||!project.capabilities.length||typeof project.name!=='string')throw new Error('Choose a BIVE snapshot JSON or exported preview HTML.');
+  const wrapped=['mhproto-snapshot','bive-snapshot'].includes(value?.format);
+  if(wrapped&&value.version!==1)throw new Error('Unsupported MHProto snapshot version.');
+  const project=wrapped?value.project:value;
+  if(!project||!Array.isArray(project.capabilities)||!project.capabilities.length||typeof project.name!=='string')throw new Error('Choose a MHProto snapshot JSON or exported preview HTML.');
   const ids=new Set();
   for(const cap of project.capabilities){
-    if(!cap||typeof cap.id!=='string'||ids.has(cap.id)||!Array.isArray(cap.operations)||!Array.isArray(cap.rules)||!Array.isArray(cap.examples)||!Array.isArray(cap.checks)||!cap.openapi)throw new Error('The baseline does not contain a valid BIVE contract.');
+    if(!cap||typeof cap.id!=='string'||ids.has(cap.id)||!Array.isArray(cap.operations)||!Array.isArray(cap.rules)||!Array.isArray(cap.examples)||!Array.isArray(cap.checks)||!cap.openapi)throw new Error('The baseline does not contain a valid MHProto contract.');
     ids.add(cap.id);
   }
   return project;
@@ -22,7 +23,7 @@ export function snapshotProject(value) {
 export function contractSnapshot(value, {label='Iteration baseline',createdAt=new Date().toISOString()}={}) {
   const project=snapshotProject(value);
   // Detach nested schemas and visuals: later viewer edits must not move the baseline.
-  return JSON.parse(JSON.stringify({format:'bive-snapshot',version:1,label,createdAt,project:{name:project.name,system:project.system??'',visuals:project.visuals??[],capabilities:project.capabilities.map(({evidence,digest,...cap})=>cap)}}));
+  return JSON.parse(JSON.stringify({format:'mhproto-snapshot',version:1,label,createdAt,project:{name:project.name,system:project.system??'',visuals:project.visuals??[],capabilities:project.capabilities.map(({evidence,digest,...cap})=>cap)}}));
 }
 const status = (a,b) => a===undefined?'added':b===undefined?'removed':'changed';
 export function fieldChanges(before,after,path=[]) {

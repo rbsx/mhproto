@@ -1,6 +1,6 @@
 # Context design
 
-Keep BIVE useful to people in the viewer, and small for agents at its retrieval boundary. Collapsing browser content alone does not reduce tokens: an agent must request a smaller packet.
+Keep MHProto useful to people in the viewer, and small for agents at its retrieval boundary. Collapsing browser content alone does not reduce tokens: an agent must request a smaller packet.
 
 ## Established patterns
 
@@ -10,12 +10,12 @@ Keep BIVE useful to people in the viewer, and small for agents at its retrieval 
 
 [OpenAI: Harness engineering](https://openai.com/index/harness-engineering/) describes short agent instructions as a map into structured repository documentation, with progressive disclosure and mechanical validation. Applied here: concise installable skills, explicit deferred references, linked checks and revision-bound evidence.
 
-These are architecture patterns. Provider examples are not measurements of BIVE or a guarantee of our savings.
+These are architecture patterns. Provider examples are not measurements of MHProto or a guarantee of our savings.
 
 ## Retrieval flow
 
-1. `bive context` identifies the feature and endpoint.
-2. `bive context --capability daily --operation tap` supplies the endpoint contract.
+1. `mhproto context` identifies the feature and endpoint.
+2. `mhproto context --capability daily --operation tap` supplies the endpoint contract.
 3. Fetch needed `--schema`, `--rule`, `--example` or `--check` detail. Read deferred groups before changing their behaviour.
 4. Fetch `--visual ID` metadata and open its image/design only if it helps the task.
 5. Inspect authoritative implementation/docs and run required checks for the change.

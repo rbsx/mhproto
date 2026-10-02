@@ -14,8 +14,8 @@ async function viewerCode() {
 }
 
 async function fixture({change=()=>{},hash='',realMermaid=false,baseline=false}={}) {
-  const root=await mkdtemp(path.join(os.tmpdir(),'bive-flow-'));
-  execFileSync(process.execPath,[path.join(packageRoot,'bin/bive.mjs'),'init','--root',root,'--no-skills']);
+  const root=await mkdtemp(path.join(os.tmpdir(),'mhproto-flow-'));
+  execFileSync(process.execPath,[path.join(packageRoot,'bin/mhproto.mjs'),'init','--root',root,'--no-skills']);
   const project=await model(root),cap=project.capabilities[0];
   project.name='Example app';cap.url='/status';cap.description='Loads and displays the service status. Users may update it if authorised.';
   cap.rules.push({id:'EXAMPLE-B-2',text:'Only authorised users can update a service.'});
@@ -29,11 +29,11 @@ async function fixture({change=()=>{},hash='',realMermaid=false,baseline=false}=
   cap.checks=[{id:'EXAMPLE-V-1',title:'Read status',command:['node','check.mjs'],rules:['EXAMPLE-B-1'],testNames:['status check']}];
   cap.evidence={finishedAt:'2026-10-02T09:00:00Z',stale:false,results:[{id:'EXAMPLE-V-1',status:'passing',tests:[{name:'status check',type:'test:pass'}]}]};
   const before=JSON.parse(JSON.stringify(project));change(project);
-  const dom=new JSDOM(await readFile(path.join(packageRoot,'viewer/index.html'),'utf8'),{runScripts:'outside-only',url:'https://bive.test/'+hash});
+  const dom=new JSDOM(await readFile(path.join(packageRoot,'viewer/index.html'),'utf8'),{runScripts:'outside-only',url:'https://mhproto.test/'+hash});
   const {window}=dom,doc=window.document;window.scrollTo=()=>{};
   const style=doc.createElement('style');style.textContent=await readFile(path.join(packageRoot,'viewer/style.css'),'utf8');doc.head.append(style);
-  const element=doc.createElement('script');element.id='bive-model';element.type='application/json';element.textContent=JSON.stringify(project);doc.body.append(element);
-  if(baseline){const node=doc.createElement('script');node.id='bive-baseline';node.type='application/json';node.textContent=JSON.stringify(contractSnapshot(before,{label:'Before this iteration',createdAt:'2026-10-01T10:00:00Z'}));doc.body.append(node);}
+  const element=doc.createElement('script');element.id='mhproto-model';element.type='application/json';element.textContent=JSON.stringify(project);doc.body.append(element);
+  if(baseline){const node=doc.createElement('script');node.id='mhproto-baseline';node.type='application/json';node.textContent=JSON.stringify(contractSnapshot(before,{label:'Before this iteration',createdAt:'2026-10-01T10:00:00Z'}));doc.body.append(node);}
   if(realMermaid){
     window.structuredClone=structuredClone;
     // SVG text measurement is approximate in JSDOM: tests assess parsing/rendering, not pixel layout.
@@ -45,7 +45,7 @@ async function fixture({change=()=>{},hash='',realMermaid=false,baseline=false}=
   const click=async selector=>{
     const item=doc.querySelector(selector);assert.ok(item,selector);
     if(item.tagName==='A'&&item.hash&&item.hash!==window.location.hash){
-      const navigation=new Promise(resolve=>window.addEventListener('hashchange',resolve,{once:true}));item.click();await navigation;await window.biveReady;
+      const navigation=new Promise(resolve=>window.addEventListener('hashchange',resolve,{once:true}));item.click();await navigation;await window.mhprotoReady;
     }else {item.click();await Promise.resolve();}
     return item;
   };
@@ -56,7 +56,7 @@ test('feature overview starts with API signatures and ends with checks, without 
   const {dom,doc}=await fixture();
   assert.equal(doc.querySelector('#project-name').textContent,'Example app');
   assert.equal(doc.querySelector('#features a').textContent,'Example capability');
-  assert.equal(doc.querySelector('.brand-mark').textContent,'[b]');
+  assert.equal(doc.querySelector('.brand-mark').textContent,'[mh]');
   assert.equal(doc.querySelector('main').firstElementChild.className,'search-row');
   assert.equal(doc.querySelector('h1').textContent,'Example capability');
   assert.equal(doc.querySelector('.feature-url code').textContent,'/status');
@@ -97,7 +97,7 @@ test('comparison highlights added, changed and removed fields without adding obj
   assert.equal(doc.querySelectorAll('.signature [data-add-visual]').length,0);
   assert.equal(doc.querySelectorAll('.io-grid>.section').length,0);
   assert.equal(doc.querySelectorAll('.io-heading>[data-add-visual]').length,2);
-  await click('[data-exit-comparison]');await new Promise(resolve=>window.setTimeout(resolve,0));await window.biveReady;
+  await click('[data-exit-comparison]');await new Promise(resolve=>window.setTimeout(resolve,0));await window.mhprotoReady;
   assert.ok(window.location.hash.includes('rule=EXAMPLE-B-2'));assert.ok(!window.location.hash.includes('compare='));
   assert.equal(doc.querySelectorAll('[data-change],.change-badge,.comparison-bar').length,0);
   dom.window.close();
@@ -116,29 +116,29 @@ test('removed endpoints remain reviewable, and category filtering does not hide 
 
 test('baseline picker reads earlier HTML without executing it and preserves the comparison on invalid input',async()=>{
   const {dom,doc,window}=await fixture({hash:'#/changes'});
-  const old=JSON.parse(JSON.stringify(JSON.parse(doc.querySelector('#bive-model').textContent)));old.capabilities[0].openapi.components.schemas.User.properties.previous={type:'string'};
+  const old=JSON.parse(JSON.stringify(JSON.parse(doc.querySelector('#mhproto-model').textContent)));old.capabilities[0].openapi.components.schemas.User.properties.previous={type:'string'};
   const choose=async(content,name)=>{
     const input=doc.querySelector('#baseline-file');Object.defineProperty(input,'files',{value:[new window.File([content],name)],configurable:true});
-    input.dispatchEvent(new window.Event('change',{bubbles:true}));await window.biveComparisonReady;
+    input.dispatchEvent(new window.Event('change',{bubbles:true}));await window.mhprotoComparisonReady;
   };
-  await choose('<script>window.wasExecuted=true</script><script id="bive-model" type="application/json">'+JSON.stringify(old)+'</script>','previous.html');
+  await choose('<script>window.wasExecuted=true</script><script id="mhproto-model" type="application/json">'+JSON.stringify(old)+'</script>','previous.html');
   assert.equal(window.wasExecuted,undefined);assert.equal(doc.querySelectorAll('.changes-list>li').length,1);
   assert.ok(doc.querySelector('#content').textContent.includes('previous.html'));
   await choose('{"name":"not a contract"}','invalid.json');
-  assert.equal(doc.querySelectorAll('.changes-list>li').length,1);assert.ok(doc.querySelector('.comparison-error').textContent.includes('BIVE'));
+  assert.equal(doc.querySelectorAll('.changes-list>li').length,1);assert.ok(doc.querySelector('.comparison-error').textContent.includes('MHProto'));
   dom.window.close();
 });
 
 test('starting an iteration and saving the exported preview retains the baseline and clean comparison',async()=>{
   const {dom,doc,window,click}=await fixture({hash:'#/changes'});
-  await click('[data-start-iteration]');await window.biveComparisonReady;
+  await click('[data-start-iteration]');await window.mhprotoComparisonReady;
   assert.ok(doc.querySelector('.empty').textContent.includes('No spec changes'));
   assert.equal(doc.querySelector('#save-preview').hidden,false);
   let saved;window.URL.createObjectURL=blob=>{saved=blob;return 'blob:preview';};window.URL.revokeObjectURL=()=>{};window.HTMLAnchorElement.prototype.click=function(){};
   await click('#save-preview');
   const html=await new Promise(resolve=>{const reader=new window.FileReader();reader.onload=()=>resolve(reader.result);reader.readAsText(saved);});
-  const reload=new JSDOM(html,{runScripts:'outside-only',url:'https://bive.test/#/changes'});
-  const baseline=JSON.parse(reload.window.document.querySelector('#bive-baseline').textContent);assert.equal(baseline.format,'bive-snapshot');assert.equal(baseline.project.capabilities[0].evidence,undefined);
+  const reload=new JSDOM(html,{runScripts:'outside-only',url:'https://mhproto.test/#/changes'});
+  const baseline=JSON.parse(reload.window.document.querySelector('#mhproto-baseline').textContent);assert.equal(baseline.format,'mhproto-snapshot');assert.equal(baseline.project.capabilities[0].evidence,undefined);
   reload.window.mermaid={initialize(){},render:async()=>({svg:'<svg></svg>'})};reload.window.scrollTo=()=>{};
   await reload.window.eval(`(async()=>{${await viewerCode()}\n})()`);
   assert.ok(reload.window.document.querySelector('.empty').textContent.includes('No spec changes'));dom.window.close();reload.window.close();
@@ -278,7 +278,7 @@ test('visuals stay beside their target, and static attachments survive Save prev
   form.elements.title.value='Updated state';
   const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a4l8AAAAASUVORK5CYII=','base64');
   Object.defineProperty(form.elements.file,'files',{value:[new window.File([png],'state.png',{type:'image/png'})]});
-  form.dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true}));await window.biveAttachmentReady;
+  form.dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true}));await window.mhprotoAttachmentReady;
   assert.ok(doc.querySelector('.visual img[alt="Updated state"]'));
   assert.ok(!doc.querySelector('#save-preview').hidden);
   assert.ok(doc.querySelector('#read-mode').textContent.includes('save to keep'));
@@ -286,10 +286,10 @@ test('visuals stay beside their target, and static attachments survive Save prev
   window.HTMLAnchorElement.prototype.click=function(){};
   await click('#save-preview');
   const html=await new Promise(resolve=>{const reader=new window.FileReader();reader.onload=()=>resolve(reader.result);reader.readAsText(saved);});
-  const reload=new JSDOM(html,{runScripts:'outside-only',url:'https://bive.test/#/features/example/api/setStatus'});
-  const model=JSON.parse(reload.window.document.querySelector('#bive-model').textContent);
+  const reload=new JSDOM(html,{runScripts:'outside-only',url:'https://mhproto.test/#/features/example/api/setStatus'});
+  const model=JSON.parse(reload.window.document.querySelector('#mhproto-model').textContent);
   assert.equal(model.visuals.length,2);assert.ok(!JSON.stringify(model).includes('base64'));
-  assert.ok(reload.window.document.querySelector('#bive-media').textContent.includes(png.toString('base64')));
+  assert.ok(reload.window.document.querySelector('#mhproto-media').textContent.includes(png.toString('base64')));
   reload.window.scrollTo=()=>{};reload.window.mermaid={initialize(){},render:async()=>({svg:'<svg></svg>'})};
   await reload.window.eval(`(async()=>{${await viewerCode()}\n})()`);
   assert.ok(reload.window.document.querySelector('.visual img[alt="Updated state"]'));
@@ -299,7 +299,7 @@ test('visuals stay beside their target, and static attachments survive Save prev
 test('visual editor validates file/link choice without losing the endpoint',async()=>{
   const {dom,doc,window}=await fixture({hash:'#/features/example/api/setStatus'});
   doc.querySelector('[data-add-visual]').click();const form=doc.querySelector('.visual-form');form.elements.title.value='Design';
-  form.dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true}));await window.biveAttachmentReady;
+  form.dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true}));await window.mhprotoAttachmentReady;
   assert.ok(form.querySelector('[role=status]').textContent.includes('Choose one'));
   assert.ok(doc.querySelector('.io-grid'));dom.window.close();
 });
@@ -401,7 +401,7 @@ test('search leads to endpoint context, and Sources is a secondary page with rea
   await click('.search-result a[href$="setStatus?rule=EXAMPLE-B-2"]');assert.ok(doc.querySelector('#EXAMPLE-B-2'));
   await click('#sources-link');
   assert.equal(doc.querySelector('h1').textContent,'Sources');
-  assert.ok(doc.querySelector('.table').textContent.includes('bive/capabilities/example/examples.yaml'));
+  assert.ok(doc.querySelector('.table').textContent.includes('mhproto/capabilities/example/examples.yaml'));
   assert.ok(!doc.querySelector('.table').textContent.includes('[object Object]'));
   assert.equal(doc.querySelectorAll('#content details[open]').length,0);
   dom.window.close();

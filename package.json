@@ -1,10 +1,10 @@
 {
-  "name": "@bive/cli",
-  "version": "0.6.0",
-  "description": "Behaviour, Interface, Verification and Examples for humans and coding agents",
+  "name": "mhproto",
+  "version": "0.7.0",
+  "description": "Machine\u2013Human Protocol: a shared contract workspace for humans and coding agents",
   "type": "module",
   "bin": {
-    "bive": "./bin/bive.mjs"
+    "mhproto": "./bin/mhproto.mjs"
   },
   "exports": {
     ".": "./src/core.mjs"

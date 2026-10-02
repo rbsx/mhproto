@@ -3,11 +3,11 @@ const $ = selector => document.querySelector(selector);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 const prose = value => escape(value).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
 const raw = value => `<pre>${escape(JSON.stringify(value, null, 2))}</pre>`;
-const embedded = $('#bive-model') ? JSON.parse($('#bive-model').textContent) : null;
-const media = $('#bive-media') ? JSON.parse($('#bive-media').textContent) : {};
+const embedded = $('#mhproto-model') ? JSON.parse($('#mhproto-model').textContent) : null;
+const media = $('#mhproto-media') ? JSON.parse($('#mhproto-media').textContent) : {};
 let previewChanged = false;
 const disclosure = (title, body, open = false) => `<details class="disclosure"${open?' open':''}><summary>${escape(title)}</summary><div>${body}</div></details>`;
-let project, signature, query = '', generation = 0, diagramSerial = 0, diagramQueue = Promise.resolve();
+let project, signature, query = new URLSearchParams(location.search).get('search')??'', generation = 0, diagramSerial = 0, diagramQueue = Promise.resolve();
 const featureUrl = cap => '#/features/'+encodeURIComponent(cap.id);
 const endpointUrl = (cap, op, rule) => featureUrl(cap)+'/api/'+encodeURIComponent(op.operationId)+(rule?'?rule='+encodeURIComponent(rule):'');
 const checkUrl = (cap, check) => featureUrl(cap)+'/checks/'+encodeURIComponent(check.id);
@@ -25,7 +25,7 @@ const attachmentPolicy = Object.freeze({
 });
 let attachmentOwners = new Set();
 let entityIndex, entityProject;
-let baseline=$('#bive-baseline')?JSON.parse($('#bive-baseline').textContent):null;
+let baseline=$('#mhproto-baseline')?JSON.parse($('#mhproto-baseline').textContent):null;
 let baselineProject,baselineEntities,indexedBaseline,comparisonChanges=[],comparisonMap=new Map(),comparisonEnabled=false,comparisonError='',localBaseline=false,baselineReadOnly=false,comparisonFilter='all';
 const changeKey = change => JSON.stringify([change.capability,change.kind,change.id]);
 const changeUrl = change => '#/changes/'+encodeURIComponent(changeKey(change));
@@ -290,7 +290,7 @@ async function renderDiagrams(version) {
     if(element.dataset.rendered==='true'||element.closest('details:not([open])'))continue;
     try {
       if(!diagrams)throw new Error('The Mermaid runtime is unavailable.');
-      const id='bive-diagram-'+(++diagramSerial);
+      const id='mhproto-diagram-'+(++diagramSerial);
       const {svg}=await diagrams.render(id,element.dataset.mermaid);
       if(version!==generation||!element.isConnected)return;
       element.innerHTML=svg;
@@ -357,7 +357,7 @@ function entityPage(cap,entity) {
   return `<a class="back" href="${escape(featureUrl(cap))}">← ${escape(cap.title??cap.id)}</a><header><h1>${escape(entity.name)}</h1>${context?`<p class="description">${escape(context)}</p>`:''}</header><div class="page-actions"><button class="text-button" data-copy-url>Copy page link</button></div>${objectSignature(cap,entity.schema,0,new Set(),entity)}${entity.derived?'':visualGallery(target(cap,'schema',entity.id))}<section><h2>Used in</h2>${groups||'<p class="section-note">No API endpoint currently uses this type.</p>'}</section>${parents.length?`<section><h2>Referenced by types</h2><ul class="type-parent-list">${parents.map(parent=>{const feature=project.capabilities.find(c=>c.id===parent.capability),fields=[...parent.references.get(entity.identity).fields];return `<li>${typeLink(feature,parent)}<span class="section-note">${escape(fields.join(', '))}${feature.id!==cap.id?' · '+escape(feature.title??feature.id):''}</span></li>`;}).join('')}</ul></section>`:''}<p class="type-source section-note">${entity.derived?'Name derived for this view from its existing structure.':'Defined in '+escape(cap.files.interface)+' · '+escape(entity.id)}</p>`;
 }
 function sourcesPage(cap) {
-  return `<a class="back" href="${escape(featureUrl(cap))}">← ${escape(cap.title??cap.id)}</a><h1>Sources</h1><p class="description">The feature reads these existing contract files. Edit them in your editor or through your agent.</p><table class="table"><tbody>${Object.entries(cap.files).map(([kind,file])=>`<tr><td>${escape(kind)}</td><td class="source-path">${escape(file)}</td></tr>`).join('')}</tbody></table>${disclosure('Tracked implementation',raw(cap.sources))}${disclosure('Complete behaviour document',`<div class="rule-text">${prose(cap.prose)}</div>`+markdownDiagrams(cap.prose,'State diagram'))}${disclosure('System map',`<div class="rule-text">${prose(project.system)}</div>`+markdownDiagrams(project.system,'System diagram'))}${disclosure('Local commands','<pre>bive check\nbive verify --capability '+escape(cap.id)+'\nbive snapshot\nbive diff</pre>')}`;
+  return `<a class="back" href="${escape(featureUrl(cap))}">← ${escape(cap.title??cap.id)}</a><h1>Sources</h1><p class="description">The feature reads these existing contract files. Edit them in your editor or through your agent.</p><table class="table"><tbody>${Object.entries(cap.files).map(([kind,file])=>`<tr><td>${escape(kind)}</td><td class="source-path">${escape(file)}</td></tr>`).join('')}</tbody></table>${disclosure('Tracked implementation',raw(cap.sources))}${disclosure('Complete behaviour document',`<div class="rule-text">${prose(cap.prose)}</div>`+markdownDiagrams(cap.prose,'State diagram'))}${disclosure('System map',`<div class="rule-text">${prose(project.system)}</div>`+markdownDiagrams(project.system,'System diagram'))}${disclosure('Local commands','<pre>mhproto check\nmhproto verify --capability '+escape(cap.id)+'\nmhproto snapshot\nmhproto diff</pre>')}`;
 }
 const kindLabel = kind => ({feature:'Feature',operation:'API',schema:'Type',rule:'Behaviour',example:'Example',check:'Check',visual:'Visual',system:'System'})[kind]??kind;
 function changeTitle(c) {
@@ -383,7 +383,7 @@ function currentChangeUrl(c) {
 }
 const fieldPath = path => path.length?path.map(k=>k==='schema'?'Definition':k==='presentation'?'Page behaviour':k).join(' → '):'Definition';
 function comparisonSetup() {
-  return `<details class="disclosure baseline-picker"${!baseline?' open':''}><summary>${baseline?'Change baseline':'Choose where this iteration starts'}</summary><div><label class="baseline-file">Compare with an earlier snapshot or preview<input id="baseline-file" type="file" accept=".json,.html,application/json,text/html"></label><p class="section-note">The selected file stays in this viewer. It is never executed.</p><button class="text-button" data-start-iteration${baselineReadOnly?' disabled':''}>Use current spec as baseline</button><p class="section-note">${baselineReadOnly?'Viewing a saved iteration. Start the viewer without --against to save a new baseline.':embedded?'Save preview to keep this baseline with the exported file.':'Saves .bive/baseline.json for the local workspace.'}</p></div></details><p class="comparison-error error" role="status">${escape(comparisonError)}</p>`;
+  return `<details class="disclosure baseline-picker"${!baseline?' open':''}><summary>${baseline?'Change baseline':'Choose where this iteration starts'}</summary><div><label class="baseline-file">Compare with an earlier snapshot or preview<input id="baseline-file" type="file" accept=".json,.html,application/json,text/html"></label><p class="section-note">The selected file stays in this viewer. It is never executed.</p><button class="text-button" data-start-iteration${baselineReadOnly?' disabled':''}>Use current spec as baseline</button><p class="section-note">${baselineReadOnly?'Viewing a saved iteration. Start the viewer without --against to save a new baseline.':embedded?'Save preview to keep this baseline with the exported file.':'Saves .mhproto/baseline.json for the local workspace.'}</p></div></details><p class="comparison-error error" role="status">${escape(comparisonError)}</p>`;
 }
 function changesPage(id) {
   const changed=id?comparisonMap.get(id):null;
@@ -436,7 +436,8 @@ function render() {
   const version=++generation, state=route(),cap=state.cap;
   comparisonEnabled=state.compare||state.kind==='changes';updateComparison();
   $('#project-name').textContent=project.name;
-  $('#home').href=featureUrl(project.capabilities[0]);
+  $('#search').value=query;
+  $('#home').href='https://mhproto.dev/';
   $('#features').innerHTML=project.capabilities.map(c=>`<a href="${escape(featureUrl(c))}" class="${c.id===cap.id?'active':''}"${c.id===cap.id?' aria-current="page"':''}>${escape(c.title??c.id)}</a>`).join('');
   $('#sources-link').href=featureUrl(cap)+'/sources';
   $('#changes-link').textContent='Changes'+(baseline?' · '+comparisonChanges.length:'');
@@ -457,21 +458,21 @@ function render() {
   $('#view-mode').textContent=embedded?'Exported snapshot':'Local workspace';
   $('#read-mode').textContent=previewChanged?'Added to this preview · save to keep':embedded?'Snapshot · visuals can be attached':'Visuals save to the workspace';
   $('#save-preview').hidden=!previewChanged;
-  document.title=(state.kind==='changes'?'Changes':state.kind==='api'?cap.operations.find(o=>o.operationId===state.id)?.path:state.kind==='types'?entityIndex.caps.get(cap.id).get(state.id)?.name??'Type not found':cap.title??cap.id)+' · BIVE';
+  document.title=(state.kind==='changes'?'Changes':state.kind==='api'?cap.operations.find(o=>o.operationId===state.id)?.path:state.kind==='types'?entityIndex.caps.get(cap.id).get(state.id)?.name??'Type not found':cap.title??cap.id)+' · MHProto';
   if(state.rule&&!query){const target=document.getElementById(state.rule);for(let parent=target?.parentElement;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;target?.scrollIntoView?.({block:'start'});}
   diagramQueue=diagramQueue.catch(()=>{}).then(()=>renderDiagrams(version));
-  globalThis.biveReady=diagramQueue;
+  globalThis.mhprotoReady=diagramQueue;
   return diagramQueue;
 }
 window.addEventListener('hashchange',()=>{query='';$('#search').value='';window.scrollTo?.({top:0});render();});
-document.addEventListener('toggle',event=>{if(event.target.open&&event.target.querySelector('[data-mermaid]:not([data-rendered])')){diagramQueue=diagramQueue.catch(()=>{}).then(()=>renderDiagrams(generation));globalThis.biveReady=diagramQueue;}},true);
+document.addEventListener('toggle',event=>{if(event.target.open&&event.target.querySelector('[data-mermaid]:not([data-rendered])')){diagramQueue=diagramQueue.catch(()=>{}).then(()=>renderDiagrams(generation));globalThis.mhprotoReady=diagramQueue;}},true);
 $('#search').addEventListener('input',event=>{query=event.target.value;render();});
 document.addEventListener('keydown',event=>{if(event.key==='/'&&!['INPUT','TEXTAREA'].includes(document.activeElement?.tagName)){event.preventDefault();$('#search').focus();}});
 document.addEventListener('click',async event=>{
   if(event.target.closest('[data-exit-comparison]')){
     const [pathname,params]=location.hash.split('?'),search=new URLSearchParams(params);search.delete('compare');location.hash=pathname+(search.size?'?'+search:'');return;
   }
-  if(event.target.closest('[data-download-snapshot]')){downloadFile('bive-snapshot.json',JSON.stringify(contractSnapshot(project,{label:project.name+' snapshot'}),null,2),'application/json');return;}
+  if(event.target.closest('[data-download-snapshot]')){downloadFile('mhproto-snapshot.json',JSON.stringify(contractSnapshot(project,{label:project.name+' snapshot'}),null,2),'application/json');return;}
   const start=event.target.closest('[data-start-iteration]');
   if(start){
     const task=async()=>{
@@ -481,7 +482,7 @@ document.addEventListener('click',async event=>{
         else {const response=await fetch('/api/baseline',{method:'POST',headers:{'content-type':'application/json'},body:'{}'});const value=await response.json();if(!response.ok)throw new Error(value.error??'Could not save the baseline');baseline=value;}
         localBaseline=false;await render();
       }catch(error){comparisonError=error.message;await render();}
-    };globalThis.biveComparisonReady=task();return;
+    };globalThis.mhprotoComparisonReady=task();return;
   }
   const add=event.target.closest('[data-add-visual]');
   if(add){
@@ -507,11 +508,11 @@ document.addEventListener('change',event=>{
     try{
       if(file.size>16*1024*1024)throw new Error('Choose a snapshot or preview up to 16 MB.');
       const text=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('Could not read the baseline'));reader.readAsText(file);});
-      const parsed=text.trimStart().startsWith('<')?JSON.parse(new DOMParser().parseFromString(text,'text/html').querySelector('#bive-model')?.textContent??'null'):JSON.parse(text);
+      const parsed=text.trimStart().startsWith('<')?JSON.parse(new DOMParser().parseFromString(text,'text/html').querySelector('#mhproto-model, #bive-model')?.textContent??'null'):JSON.parse(text);
       const next=contractSnapshot(parsed,{label:parsed?.label??file.name,createdAt:parsed?.createdAt??null});
       buildEntityIndex(snapshotProject(next));baseline=next;localBaseline=true;comparisonError='';if(embedded)previewChanged=true;await render();
-    }catch(error){comparisonError=error instanceof SyntaxError?'Could not read a BIVE baseline from this file.':error.message;await render();}
-  };globalThis.biveComparisonReady=task();
+    }catch(error){comparisonError=error instanceof SyntaxError?'Could not read a MHProto baseline from this file.':error.message;await render();}
+  };globalThis.mhprotoComparisonReady=task();
 });
 const readData = file => new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('Could not read this file'));reader.readAsDataURL(file);});
 function mediaValid(data) {
@@ -545,16 +546,16 @@ document.addEventListener('submit',event=>{
       }
     }catch(error){message.textContent=error.message;message.classList.add('error');button.disabled=false;}
   };
-  globalThis.biveAttachmentReady=task();
+  globalThis.mhprotoAttachmentReady=task();
 });
 $('#save-preview').addEventListener('click',()=>{
   const copy=document.documentElement.cloneNode(true),safe=value=>JSON.stringify(value).replaceAll('<','\\u003c');
-  copy.querySelector('#bive-model').textContent=safe(project);
-  let registry=copy.querySelector('#bive-media');if(!registry){registry=document.createElement('script');registry.id='bive-media';registry.type='application/json';copy.querySelector('#bive-model').after(registry);}
+  copy.querySelector('#mhproto-model').textContent=safe(project);
+  let registry=copy.querySelector('#mhproto-media');if(!registry){registry=document.createElement('script');registry.id='mhproto-media';registry.type='application/json';copy.querySelector('#mhproto-model').after(registry);}
   registry.textContent=safe(media);copy.querySelector('#content').textContent='Loading…';copy.querySelector('#features').textContent='';copy.querySelector('#save-preview').hidden=true;
-  let baselineNode=copy.querySelector('#bive-baseline');if(!baselineNode){baselineNode=document.createElement('script');baselineNode.id='bive-baseline';baselineNode.type='application/json';copy.querySelector('#bive-model').after(baselineNode);}baselineNode.textContent=safe(baseline);
+  let baselineNode=copy.querySelector('#mhproto-baseline');if(!baselineNode){baselineNode=document.createElement('script');baselineNode.id='mhproto-baseline';baselineNode.type='application/json';copy.querySelector('#mhproto-model').after(baselineNode);}baselineNode.textContent=safe(baseline);
   const link=document.createElement('a'),url=URL.createObjectURL(new Blob(['<!doctype html>\n'+copy.outerHTML],{type:'text/html'}));
-  link.href=url;link.download='bive-preview.html';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  link.href=url;link.download='mhproto-preview.html';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 });
 async function refresh(initial=false) {
   try{
@@ -563,7 +564,7 @@ async function refresh(initial=false) {
     if(!response.ok)throw new Error('Could not load the project');
     const next=await response.json();if(next.error)throw new Error(next.error);
     let nextBaseline=baseline;
-    if(!localBaseline){const r=await fetch('/api/baseline');if(r.ok){nextBaseline=await r.json();baselineReadOnly=r.headers.get('x-bive-baseline-readonly')==='true';}else if(r.status===404){const fallback=await fetch('./baseline.json');if(fallback.ok)nextBaseline=await fallback.json();else if(initial)nextBaseline=null;}else throw new Error('Could not read the comparison baseline');}
+    if(!localBaseline){const r=await fetch('/api/baseline');if(r.ok){nextBaseline=await r.json();baselineReadOnly=r.headers.get('x-mhproto-baseline-readonly')==='true';}else if(r.status===404){const fallback=await fetch('./baseline.json');if(fallback.ok)nextBaseline=await fallback.json();else if(initial)nextBaseline=null;}else throw new Error('Could not read the comparison baseline');}
     if(nextBaseline)snapshotProject(nextBaseline);
     const nextSignature=JSON.stringify([next,nextBaseline]);
     if(initial||nextSignature!==signature){project=next;baseline=nextBaseline;signature=nextSignature;await render();}

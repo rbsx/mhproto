@@ -14,7 +14,7 @@ import { createHandler, exportViewer } from '../src/server.mjs';
 const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a4l8AAAAASUVORK5CYII=','base64');
 const data='data:image/png;base64,'+png.toString('base64');
 const target={capability:'example',kind:'response',id:'getStatus',status:'200'};
-async function fixture(){const root=await mkdtemp(path.join(os.tmpdir(),'bive-visual-'));execFileSync(process.execPath,[path.join(packageRoot,'bin/bive.mjs'),'init','--root',root,'--no-skills']);return {root,project:await loadProject(root)};}
+async function fixture(){const root=await mkdtemp(path.join(os.tmpdir(),'mhproto-visual-'));execFileSync(process.execPath,[path.join(packageRoot,'bin/mhproto.mjs'),'init','--root',root,'--no-skills']);return {root,project:await loadProject(root)};}
 async function request(root,{method='GET',url='/api/model',origin,host='127.0.0.1:4317',body}={}){
   const req=Readable.from(body?[Buffer.from(JSON.stringify(body))]:[]);Object.assign(req,{method,url,headers:{host,origin,'content-type':'application/json'}});
   const result={status:200,headers:{}};
@@ -41,7 +41,7 @@ test('attachments reject invalid targets, disguised content, unsafe links and es
   await assert.rejects(addVisual(root,project,{target,title:'Fake',data:'data:image/png;base64,'+Buffer.from('<html>').toString('base64')}),/does not match/);
   await assert.rejects(addVisual(root,project,{target,title:'Link',url:'javascript:alert(1)'}),/HTTPS/);
   await assert.rejects(addVisual(root,project,{target:{...target,id:'missing'},title:'Link',url:'https://example.com'}),/unknown operation/);
-  const outside=await mkdtemp(path.join(os.tmpdir(),'bive-outside-'));await symlink(outside,path.join(root,'bive/assets'));
+  const outside=await mkdtemp(path.join(os.tmpdir(),'mhproto-outside-'));await symlink(outside,path.join(root,'mhproto/assets'));
   await assert.rejects(addVisual(root,project,{target,title:'Escape',data}),/escapes project/);
 });
 test('write endpoint requires same-origin JSON and persists a validated attachment',async()=>{
@@ -62,7 +62,7 @@ test('scoped context preserves exact behaviour, constraints and failures while d
   cap.openapi.components={schemas:{Owner:{type:'object',properties:{name:{type:'string',maxLength:100}}}}};
   cap.checks=[{id:'EXAMPLE-V-1',rules:['EXAMPLE-B-1'],command:['node','test']}];
   cap.evidence={stale:true,results:[{id:'EXAMPLE-V-1',status:'passing',stdout:'HUGE LOG'}]};
-  project.visuals=[{id:'v1',title:'State',target,file:'bive/assets/state.png',mime:'image/png'}];
+  project.visuals=[{id:'v1',title:'State',target,file:'mhproto/assets/state.png',mime:'image/png'}];
   const packet=contextPacket(project,{capability:cap.id,operation:op.operationId}),encoded=encodeContext(packet);
   assert.deepEqual(packet.behaviour.rules,[cap.rules[0]]);assert.equal(packet.behaviour.preconditions[0].needs,'Service exists');
   assert.deepEqual(packet.behaviour.deferredGroups[0].rules,['EXAMPLE-B-2']);assert.deepEqual(packet.referencedSchemas,['Owner']);
@@ -75,6 +75,6 @@ test('scoped context preserves exact behaviour, constraints and failures while d
 });
 test('context CLI emits compact index and reports exact sizes separately',async()=>{
   const {root}=await fixture();
-  const output=execFileSync(process.execPath,[path.join(packageRoot,'bin/bive.mjs'),'context','--root',root],{encoding:'utf8'});
+  const output=execFileSync(process.execPath,[path.join(packageRoot,'bin/mhproto.mjs'),'context','--root',root],{encoding:'utf8'});
   const packet=JSON.parse(output);assert.equal(packet.features.length,1);assert.ok(!output.includes('openapi'));
 });

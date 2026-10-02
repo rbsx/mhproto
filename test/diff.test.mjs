@@ -10,7 +10,7 @@ import {packageRoot} from '../src/core.mjs';
 import {model,createHandler,exportViewer} from '../src/server.mjs';
 import {compareModels,contractSnapshot,snapshotProject} from '../viewer/diff.js';
 
-async function fixture(){const root=await mkdtemp(path.join(os.tmpdir(),'bive-diff-'));execFileSync(process.execPath,[path.join(packageRoot,'bin/bive.mjs'),'init','--root',root,'--no-skills']);return {root,project:await model(root)};}
+async function fixture(){const root=await mkdtemp(path.join(os.tmpdir(),'mhproto-diff-'));execFileSync(process.execPath,[path.join(packageRoot,'bin/mhproto.mjs'),'init','--root',root,'--no-skills']);return {root,project:await model(root)};}
 async function request(root,url,{method='GET',origin='http://127.0.0.1:4317',body='{}',against}={}){
   const req=Readable.from(method==='POST'?[Buffer.from(body)]:[]);req.url=url;req.method=method;req.headers={host:'127.0.0.1:4317',origin,'content-type':'application/json'};
   const result={status:200,body:''},res={setHeader(){},writeHead(status){result.status=status;return this;},end(value=''){result.body=String(value);return this;}};
@@ -52,7 +52,7 @@ test('snapshots omit execution evidence, support legacy baselines and reject mal
   assert.equal(saved.project.root,undefined);assert.equal(saved.project.capabilities[0].evidence,undefined);assert.equal(saved.project.capabilities[0].digest,undefined);
   assert.deepEqual(compareModels(saved,project),[]);assert.equal(snapshotProject(project),project);
   assert.throws(()=>snapshotProject({...saved,version:2}),/Unsupported/);
-  assert.throws(()=>snapshotProject({name:'Bad',capabilities:[{}]}),/valid BIVE/);
+  assert.throws(()=>snapshotProject({name:'Bad',capabilities:[{}]}),/valid MHProto/);
   project.capabilities[0].rules[0].text='Later edit';project.visuals.push({id:'new',title:'New visual',target:{capability:'example',kind:'feature'},url:'https://example.com'});
   assert.notEqual(saved.project.capabilities[0].rules[0].text,'Later edit');assert.equal(saved.project.visuals.length,0);
   assert.ok(compareModels(saved,project).some(c=>c.kind==='visual'&&c.status==='added'));
@@ -62,19 +62,19 @@ test('baseline API persists the current spec only for same-origin writes and sup
   const {root}=await fixture();assert.equal(JSON.parse((await request(root,'/api/baseline')).body),null);
   assert.equal((await request(root,'/api/baseline',{method:'POST',origin:'https://outside.test'})).status,403);
   const saved=await request(root,'/api/baseline',{method:'POST'});assert.equal(saved.status,201);
-  assert.equal(JSON.parse(saved.body).format,'bive-snapshot');assert.equal(JSON.parse((await request(root,'/api/diff')).body).changes.length,0);
-  const file=path.join(root,'bive/capabilities/example/spec.md');await writeFile(file,(await readFile(file,'utf8'))+'\n- **EXAMPLE-B-2** Added after the baseline.\n');
+  assert.equal(JSON.parse(saved.body).format,'mhproto-snapshot');assert.equal(JSON.parse((await request(root,'/api/diff')).body).changes.length,0);
+  const file=path.join(root,'mhproto/capabilities/example/spec.md');await writeFile(file,(await readFile(file,'utf8'))+'\n- **EXAMPLE-B-2** Added after the baseline.\n');
   assert.ok(JSON.parse((await request(root,'/api/diff')).body).changes.some(c=>c.kind==='rule'&&c.id==='EXAMPLE-B-2'));
   const alternate=path.join(root,'iteration.json');await writeFile(alternate,saved.body);
   assert.equal((await request(root,'/api/baseline',{method:'POST',against:alternate})).status,409);
-  assert.equal(JSON.parse((await request(root,'/api/baseline',{against:alternate})).body).format,'bive-snapshot');
+  assert.equal(JSON.parse((await request(root,'/api/baseline',{against:alternate})).body).format,'mhproto-snapshot');
 });
 
 test('standalone export embeds the selected baseline and runs its shared comparison without network access',async()=>{
   const {root,project}=await fixture(),before=structuredClone(project);before.capabilities[0].rules=[];
   const baseline=path.join(root,'iteration.json');await writeFile(baseline,JSON.stringify(contractSnapshot(before,{label:'Previous iteration'})));
   const destination=path.join(root,'export');await exportViewer(root,destination,{against:baseline});
-  const html=await readFile(path.join(destination,'viewer.html'),'utf8'),dom=new JSDOM(html,{runScripts:'outside-only',url:'https://bive.test/#/changes'});
+  const html=await readFile(path.join(destination,'viewer.html'),'utf8'),dom=new JSDOM(html,{runScripts:'outside-only',url:'https://mhproto.test/#/changes'});
   dom.window.fetch=()=>{throw new Error('Export must not fetch');};dom.window.scrollTo=()=>{};dom.window.mermaid={initialize(){},render:async()=>({svg:'<svg></svg>'})};
   await dom.window.eval(`(async()=>{${html.match(/<script type="module">([\s\S]*?)<\/script>/)[1]}\n})()`);
   assert.equal(dom.window.document.querySelector('h1').textContent,'Changes');

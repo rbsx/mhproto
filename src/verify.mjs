@@ -4,12 +4,12 @@ import path from 'node:path';
 import { loadProject, packageRoot } from './core.mjs';
 
 export async function runCheck(check, root) {
-  const command = check.command.map(arg => arg === '{biveNodeReporter}' ? path.join(packageRoot, 'src/node-reporter.mjs') : arg);
+  const command = check.command.map(arg => arg === '{mhprotoNodeReporter}' ? path.join(packageRoot, 'src/node-reporter.mjs') : arg);
   const startedAt = new Date().toISOString();
   const started = Date.now();
   return new Promise(resolve => {
     const env = { ...process.env, ...check.env };
-    // Each command is an independent run even when BIVE itself is called from node --test.
+    // Each command is an independent run even when MHProto itself is called from node --test.
     delete env.NODE_TEST_CONTEXT;
     const child = spawn(command[0], command.slice(1), { cwd: root, shell: false, env, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
     let stdout = '', stderr = '', truncated = false, settled = false, timedOut = false;
@@ -51,7 +51,7 @@ export async function verifyCapability(project, cap, onResult = () => {}) {
   }
   const current = (await loadProject(project.root)).capabilities.find(c => c.id === cap.id);
   const report = { version: 1, capability: cap.id, digest: cap.digest, finishedAt: new Date().toISOString(), changedDuringRun: current.digest !== cap.digest, results };
-  const directory = path.join(project.root, '.bive/evidence');
+  const directory = path.join(project.root, '.mhproto/evidence');
   await mkdir(directory, { recursive: true });
   const destination = path.join(directory, `${cap.id}.json`), temp = destination + '.tmp';
   await writeFile(temp, JSON.stringify(report, null, 2) + '\n');

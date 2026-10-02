@@ -3,7 +3,7 @@ import path from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import { parse, stringify } from 'yaml';
 
-export const visualsFile = 'bive/visuals.yaml';
+export const visualsFile = 'mhproto/visuals.yaml';
 const queues = new Map();
 export const mediaTypes = { 'image/png':'png', 'image/jpeg':'jpg', 'image/webp':'webp', 'image/gif':'gif', 'application/pdf':'pdf' };
 export const maxMediaBytes = 8 * 1024 * 1024;
@@ -74,7 +74,7 @@ export async function addVisual(root,project,input) {
       bytes=Buffer.from(match[2],'base64');if(!bytes.length||bytes.length>maxMediaBytes)throw new Error('Visual files must be between 1 byte and 8 MB');
       if(!validMedia(bytes,match[1]))throw new Error('Visual content does not match its media type');
       visual.mime=match[1];if(visual.mime==='application/pdf')visual.kind='design';
-      visual.file=`bive/assets/${visual.id}.${mediaTypes[visual.mime]}`;
+      visual.file=`mhproto/assets/${visual.id}.${mediaTypes[visual.mime]}`;
       visual.sha256=createHash('sha256').update(bytes).digest('hex');
     }
     const metadata=await destination(root,visualsFile);

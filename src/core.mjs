@@ -44,7 +44,7 @@ async function fingerprint(root, inputs) {
     const absolute = await projectPath(root, relative);
     if ((await stat(absolute)).isDirectory()) {
       for (const name of (await readdir(absolute)).sort()) {
-        if (['node_modules', '.git', 'dist', '.bive', '.env'].includes(name) || name.startsWith('.env.')) continue;
+        if (['node_modules', '.git', 'dist', '.mhproto', '.env'].includes(name) || name.startsWith('.env.')) continue;
         await visit(path.join(relative, name));
       }
     } else files.add(relative);
@@ -59,7 +59,7 @@ export function operationList(doc) {
     Object.entries(item).filter(([method]) => methods.has(method)).map(([method, op]) => ({
       ...op, method: method.toUpperCase(), path: url,
       parameters: [...(item.parameters ?? []), ...(op.parameters ?? [])],
-      rules: op['x-bive-rules'] ?? op['x-clauses'] ?? [],
+      rules: op['x-mhproto-rules'] ?? op['x-clauses'] ?? [],
     })));
 }
 
@@ -93,7 +93,7 @@ async function loadCapability(root, definition) {
   if (!Array.isArray(examples) || !Array.isArray(checks)) throw new Error('examples and checks must be arrays');
   const digest = await fingerprint(root, [definition.spec, definition.interface, definition.examples, definition.checks, ...(definition.sources ?? [])]);
   let evidence;
-  try { evidence = JSON.parse(await readProject(root, `.bive/evidence/${definition.id}.json`)); }
+  try { evidence = JSON.parse(await readProject(root, `.mhproto/evidence/${definition.id}.json`)); }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
   return {
     ...definition, prose, rules: extractRules(prose), openapi: doc, operations: operationList(doc),
@@ -107,8 +107,8 @@ async function loadCapability(root, definition) {
 
 export async function loadProject(root = process.cwd()) {
   root = path.resolve(root);
-  const config = parse(await readProject(root, 'bive.yaml'));
-  if (config?.version !== 1 || !Array.isArray(config.capabilities) || !config.capabilities.length) throw new Error('bive.yaml requires version: 1 and at least one capability');
+  const config = parse(await readProject(root, 'mhproto.yaml'));
+  if (config?.version !== 1 || !Array.isArray(config.capabilities) || !config.capabilities.length) throw new Error('mhproto.yaml requires version: 1 and at least one capability');
   const ids = new Set();
   for (const cap of config.capabilities) {
     if (!/^[a-z][a-z0-9-]*$/.test(cap.id) || ids.has(cap.id)) throw new Error(`Invalid or duplicate capability id: ${cap.id}`);

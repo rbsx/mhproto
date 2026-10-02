@@ -18,7 +18,7 @@ async function readBaseline(file,required=false) {
 }
 
 export function createHandler(root, {against}={}) {
-  const baselineFile=path.resolve(root,against??'.bive/baseline.json');
+  const baselineFile=path.resolve(root,against??'.mhproto/baseline.json');
   return async (request, response) => {
     response.setHeader('content-security-policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'");
     response.setHeader('x-content-type-options', 'nosniff');
@@ -33,7 +33,7 @@ export function createHandler(root, {against}={}) {
         let bytes=0;for await(const chunk of request){bytes+=chunk.length;if(bytes>1024){response.writeHead(413).end();return;}}
         const baseline=contractSnapshot(await model(root));
         await mkdir(path.dirname(baselineFile),{recursive:true});
-        const directory=await projectPath(root,'.bive'),temporary=path.join(directory,'.baseline-'+randomUUID()+'.tmp');
+        const directory=await projectPath(root,'.mhproto'),temporary=path.join(directory,'.baseline-'+randomUUID()+'.tmp');
         await writeFile(temporary,JSON.stringify(baseline,null,2)+'\n',{flag:'wx'});await rename(temporary,baselineFile);
         response.writeHead(201,{'content-type':'application/json'}).end(JSON.stringify(baseline));return;
       }
@@ -70,7 +70,7 @@ export function createHandler(root, {against}={}) {
         response.end(JSON.stringify({ available: Boolean(previous), changes: previous ? compareModels(previous, await model(root)) : [] })); return;
       }
       if(url.pathname==='/api/baseline'){
-        response.setHeader('x-bive-baseline-readonly',String(Boolean(against)));
+        response.setHeader('x-mhproto-baseline-readonly',String(Boolean(against)));
         response.setHeader('content-type','application/json');response.end(JSON.stringify(await readBaseline(baselineFile,Boolean(against))));return;
       }
       const asset = assets[url.pathname];
@@ -102,13 +102,13 @@ export async function exportViewer(root, destination, {against}={}) {
     media[visual.id] = `data:${mime};base64,${(await readFile(await projectPath(root,visual.file))).toString('base64')}`;
   }
   await writeFile(path.join(destination, 'model.json'), JSON.stringify(project, null, 2));
-  const baseline=await readBaseline(path.resolve(root,against??'.bive/baseline.json'),Boolean(against));
+  const baseline=await readBaseline(path.resolve(root,against??'.mhproto/baseline.json'),Boolean(against));
   await writeFile(path.join(destination,'baseline.json'),JSON.stringify(baseline));
   const [html, css, js, mermaid, diff] = await Promise.all(['index.html', 'style.css', 'app.js', 'vendor/mermaid.min.js','diff.js'].map(name => readFile(path.join(packageRoot, 'viewer', name), 'utf8')));
   const bundled=js.replace("import { compareModels, contractSnapshot, snapshotProject, canonical } from './diff.js';",()=>diff.replace(/^export /gm,''));
   const safeJson = value => JSON.stringify(value).replaceAll('<', '\\u003c');
   const standalone = html.replace('<link rel="stylesheet" href="/style.css">', () => `<style>${css}</style>`)
     .replace('<script src="/vendor/mermaid.min.js"></script>', () => `<script>${mermaid.replace(/<\/script/gi, '<\\/script')}</script>`)
-    .replace('<script type="module" src="/app.js"></script>', () => `<script id="bive-model" type="application/json">${safeJson(project)}</script><script id="bive-media" type="application/json">${safeJson(media)}</script><script id="bive-baseline" type="application/json">${safeJson(baseline)}</script><script type="module">${bundled.replace(/<\/script/gi, '<\\/script')}</script>`);
+    .replace('<script type="module" src="/app.js"></script>', () => `<script id="mhproto-model" type="application/json">${safeJson(project)}</script><script id="mhproto-media" type="application/json">${safeJson(media)}</script><script id="mhproto-baseline" type="application/json">${safeJson(baseline)}</script><script type="module">${bundled.replace(/<\/script/gi, '<\\/script')}</script>`);
   await writeFile(path.join(destination, 'viewer.html'), standalone);
 }

@@ -24,18 +24,18 @@ async function installSkills(agent = 'codex') {
     for (const name of await readdir(path.join(packageRoot, 'skills'))) {
       await cp(path.join(packageRoot, 'skills', name), path.join(root, destination, name), { recursive: true, force: false, errorOnExist: true });
     }
-    console.log(`Installed five BIVE skills in ${destination}`);
+    console.log(`Installed five MHProto skills in ${destination}`);
   }
 }
 
 async function init() {
   const files = {
-    'bive.yaml': 'version: 1\nname: My app\nsystem: bive/system.md\ncapabilities:\n  - id: example\n    title: Example capability\n    spec: bive/capabilities/example/spec.md\n    interface: bive/interfaces/openapi.yaml\n    examples: bive/capabilities/example/examples.yaml\n    checks: bive/capabilities/example/checks.yaml\n    sources: []\n',
-    'bive/system.md': '# System map\n\nReplace this with the app’s capabilities, owners and dependencies.\n',
-    'bive/capabilities/example/spec.md': '# Example capability\n\nStatus: draft — replace this scaffold before implementing.\n\n## Purpose\nDescribe the capability and its boundaries.\n\n## Rules\n- **EXAMPLE-B-1** Reading status returns the current service status.\n\n## States and permissions\nDocument transitions, permissions, failures and recovery.\n',
-    'bive/interfaces/openapi.yaml': 'openapi: 3.1.0\ninfo:\n  title: Example API\n  version: "1"\npaths:\n  /status:\n    get:\n      operationId: getStatus\n      x-bive-rules: [EXAMPLE-B-1]\n      responses:\n        "200":\n          description: Current status\n          content:\n            application/json:\n              schema:\n                type: object\n                required: [status]\n                additionalProperties: false\n                properties:\n                  status: { type: string, enum: [ready] }\n              example: { status: ready }\n',
-    'bive/capabilities/example/examples.yaml': 'examples:\n  - id: EXAMPLE-E-1\n    title: Read service status\n    rules: [EXAMPLE-B-1]\n    operations: [getStatus]\n    given: The service is ready.\n    when: A client reads its status.\n    then: The response says ready.\n',
-    'bive/capabilities/example/checks.yaml': '# Add argv commands and rule/example references. No tests are assumed to exist.\nchecks: []\n',
+    'mhproto.yaml': 'version: 1\nname: My app\nsystem: mhproto/system.md\ncapabilities:\n  - id: example\n    title: Example capability\n    spec: mhproto/capabilities/example/spec.md\n    interface: mhproto/interfaces/openapi.yaml\n    examples: mhproto/capabilities/example/examples.yaml\n    checks: mhproto/capabilities/example/checks.yaml\n    sources: []\n',
+    'mhproto/system.md': '# System map\n\nReplace this with the app’s capabilities, owners and dependencies.\n',
+    'mhproto/capabilities/example/spec.md': '# Example capability\n\nStatus: draft — replace this scaffold before implementing.\n\n## Purpose\nDescribe the capability and its boundaries.\n\n## Rules\n- **EXAMPLE-B-1** Reading status returns the current service status.\n\n## States and permissions\nDocument transitions, permissions, failures and recovery.\n',
+    'mhproto/interfaces/openapi.yaml': 'openapi: 3.1.0\ninfo:\n  title: Example API\n  version: "1"\npaths:\n  /status:\n    get:\n      operationId: getStatus\n      x-mhproto-rules: [EXAMPLE-B-1]\n      responses:\n        "200":\n          description: Current status\n          content:\n            application/json:\n              schema:\n                type: object\n                required: [status]\n                additionalProperties: false\n                properties:\n                  status: { type: string, enum: [ready] }\n              example: { status: ready }\n',
+    'mhproto/capabilities/example/examples.yaml': 'examples:\n  - id: EXAMPLE-E-1\n    title: Read service status\n    rules: [EXAMPLE-B-1]\n    operations: [getStatus]\n    given: The service is ready.\n    when: A client reads its status.\n    then: The response says ready.\n',
+    'mhproto/capabilities/example/checks.yaml': '# Add argv commands and rule/example references. No tests are assumed to exist.\nchecks: []\n',
   };
   // Preflight all destinations; never overwrite an existing contract.
   for (const file of Object.keys(files)) {
@@ -44,7 +44,7 @@ async function init() {
   }
   for (const [file, contents] of Object.entries(files)) { await mkdir(path.dirname(path.join(root, file)), { recursive: true }); await writeFile(path.join(root, file), contents, { flag: 'wx' }); }
   if (!has('no-skills')) await installSkills(option('agent', 'codex'));
-  console.log('Initialised BIVE. Replace the example capability; run bive check and bive view.');
+  console.log('Initialised MHProto. Replace the example capability; run mhproto check and mhproto view.');
 }
 
 try {
@@ -67,7 +67,7 @@ try {
   } else if (command === 'inspect') console.log(JSON.stringify(await model(root), null, 2));
   else if (command === 'verify') {
     const project = await loadProject(root), issues = await validateProject(project);
-    if (issues.some(i => i.level === 'error')) throw new Error('Contract validation failed; run bive check');
+    if (issues.some(i => i.level === 'error')) throw new Error('Contract validation failed; run mhproto check');
     const selected = option('capability');
     const caps = project.capabilities.filter(c => !selected || c.id === selected);
     if (!caps.length) throw new Error(`Unknown capability: ${selected}`);
@@ -85,24 +85,24 @@ try {
     const port = Number(option('port', '4317'));
     if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Invalid port');
     const server = await serve(root, port, {against:option('against')});
-    console.log(`BIVE viewer: http://127.0.0.1:${server.address().port}`);
-    console.log('Local browser view. Visual attachments save to bive/visuals.yaml; source edits refresh automatically.');
+    console.log(`MHProto viewer: http://127.0.0.1:${server.address().port}`);
+    console.log('Local browser view. Visual attachments save to mhproto/visuals.yaml; source edits refresh automatically.');
     for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => server.close(() => process.exit(0)));
   } else if (command === 'snapshot') {
-    const destination = path.resolve(root, option('out', '.bive/baseline.json'));
+    const destination = path.resolve(root, option('out', '.mhproto/baseline.json'));
     await mkdir(path.dirname(destination), { recursive: true });
     await writeFile(destination, JSON.stringify(contractSnapshot(await model(root),{label:option('label','Iteration baseline')}), null, 2)+'\n');
     console.log(`Saved baseline: ${destination}`);
   } else if (command === 'diff') {
-    const before = JSON.parse(await readFile(path.resolve(root, option('against', '.bive/baseline.json')), 'utf8'));
+    const before = JSON.parse(await readFile(path.resolve(root, option('against', '.mhproto/baseline.json')), 'utf8'));
     console.log(JSON.stringify(compareModels(before, await model(root)), null, 2));
   } else if (command === 'build') {
-    const destination = path.resolve(root, option('out', '.bive/viewer'));
+    const destination = path.resolve(root, option('out', '.mhproto/viewer'));
     await exportViewer(root, destination, {against:option('against')});
     console.log(`Exported viewer: ${destination}. Open viewer.html directly or serve this folder over HTTP.`);
   } else if (command === 'help' || has('help')) {
     const { version } = JSON.parse(await readFile(path.join(packageRoot, 'package.json'), 'utf8'));
-    console.log(`BIVE ${version}\n\nCommands: init, skills, check, context, inspect, verify, view, snapshot, diff, build\n\nOptions: --root PATH, --json (check), --capability ID (verify/context), --port PORT (view),\n         --operation ID|--rule ID|--schema NAME|--example ID|--check ID|--visual ID (context),\n         --section request,response,behaviour,errors,examples,checks,visuals,sources (context),\n         --max-chars N, --stats (context),\n         --agent codex|claude|all (init/skills), --no-skills (init),\n         --out PATH (snapshot/build), --label TEXT (snapshot), --against PATH (diff/view/build)`);
+    console.log(`MHProto ${version}\n\nCommands: init, skills, check, context, inspect, verify, view, snapshot, diff, build\n\nOptions: --root PATH, --json (check), --capability ID (verify/context), --port PORT (view),\n         --operation ID|--rule ID|--schema NAME|--example ID|--check ID|--visual ID (context),\n         --section request,response,behaviour,errors,examples,checks,visuals,sources (context),\n         --max-chars N, --stats (context),\n         --agent codex|claude|all (init/skills), --no-skills (init),\n         --out PATH (snapshot/build), --label TEXT (snapshot), --against PATH (diff/view/build)`);
   }
   else throw new Error(`Unknown command: ${command}`);
-} catch (error) { console.error(`BIVE: ${error.message}`); process.exitCode = 1; }
+} catch (error) { console.error(`MHProto: ${error.message}`); process.exitCode = 1; }

@@ -26,7 +26,7 @@ export function contextPacket(project, options = {}) {
   if (!options.capability && !selectors.length) return {
     project: project.name,
     features: project.capabilities.map(c => ({ id: c.id, title: c.title, url: c.url, operations: c.operations.map(o => pick(o, ['operationId', 'method', 'path', 'summary'])) })),
-    read: 'bive context --capability ID --operation ID; use --rule, --schema, --example, --check or --visual for detail.',
+    read: 'mhproto context --capability ID --operation ID; use --rule, --schema, --example, --check or --visual for detail.',
   };
   const cap = options.capability ? project.capabilities.find(c => c.id === options.capability) : project.capabilities.length === 1 ? project.capabilities[0] : null;
   if (!cap) throw new Error('Select a known --capability ID');
