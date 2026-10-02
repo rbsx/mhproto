@@ -43,8 +43,8 @@ draft to describe your feature, then run `npx mhproto check`.
 
 ## Learn more
 
-Visit the **[project website](https://mhproto.ignxt.chatgpt.site/)** for the overview,
-demo and [documentation](https://mhproto.ignxt.chatgpt.site/docs/). The
+Visit the **[project website](https://mhproto.dev/)** for the overview,
+demo and [documentation](https://mhproto.dev/docs/). The
 [guide source](doc/guide.md) is also available in this repository.
 
 For development, see [CONTRIBUTING.md](CONTRIBUTING.md). Current preview boundaries

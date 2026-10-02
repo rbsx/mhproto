@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>MHProto — A shared contract for humans and agents</title>
+    <meta
+      name="description"
+      content="Describe behaviour, interfaces and examples. Review linked types and iteration changes. Let agents implement and verify the agreed contract."
+    />
+    <link rel="canonical" href="https://mhproto.dev/" />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='white'/%3E%3Ctext x='3' y='43' font-family='monospace' font-size='26' font-weight='700' fill='%23141414'%3E%5Bmh%5D%3C/text%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="/site.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-header wrap">
+      <a class="brand" href="/" aria-label="MHProto home"
+        ><span class="brand-mark">[mh]</span><span>mhproto</span></a
+      >
+      <nav aria-label="Main">
+        <a href="/demo/">Demo</a><a href="/docs/">Docs</a
+        ><a href="https://github.com/rbsx/mhproto">GitHub ↗</a>
+      </nav>
+    </header>
+    <main id="main" class="wrap">
+      <section class="hero" aria-labelledby="headline">
+        <p class="eyebrow">
+          Machine–Human Protocol <span aria-hidden="true">/</span> Development preview
+        </p>
+        <h1 id="headline">
+          A shared contract for<br />
+          humans and agents.
+        </h1>
+        <p class="hero-description">
+          Describe what your app should do.<br />
+          Review the contract. Let agents implement and verify it.
+        </p>
+        <div class="hero-actions">
+          <a class="primary-link" href="/demo/"
+            >Explore the demo <span aria-hidden="true">→</span></a
+          ><a class="getting-started" href="/docs/"
+            >Get started <span aria-hidden="true">↗</span></a
+          >
+        </div>
+        <p class="install-note">Local files. Your repository. No hosted service required.</p>
+      </section>
+      <section class="product-preview" aria-label="MHProto example project">
+        <div class="preview-toolbar">
+          <span><span class="preview-dot" aria-hidden="true"></span> Inside a contract</span
+          ><a href="/demo/">Open full demo <span aria-hidden="true">↗</span></a>
+        </div>
+        <div class="preview-layout">
+          <aside class="preview-sidebar" aria-label="Example navigation">
+            <a class="brand preview-brand" href="/" aria-label="MHProto home"
+              ><span class="brand-mark">[mh]</span><span>mhproto</span></a
+            >
+            <div class="nav-label">Project</div>
+            <span>Impostor</span>
+            <div class="nav-label feature-label">Features</div>
+            <a class="selected-feature" href="/demo/#/features/daily"
+              >Daily case <span aria-hidden="true">↗</span></a
+            >
+            <div class="preview-sidebar-bottom">
+              <a href="/demo/#/changes"
+                >Changes <span class="change-count" data-change-count></span></a
+              ><a href="/demo/#/features/daily/sources">Sources</a>
+            </div>
+          </aside>
+          <div class="preview-content">
+            <form class="demo-search" action="/demo/" aria-label="Search demo">
+              <label class="sr-only" for="preview-search">Search the example project</label
+              ><svg
+                width="17"
+                height="17"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                aria-hidden="true"
+              >
+                <circle cx="10" cy="10" r="6" />
+                <path d="m15 15 5 5" /></svg
+              ><input
+                id="preview-search"
+                name="search"
+                placeholder="Search this project…"
+                type="search"
+              /><button type="submit" aria-label="Search the full demo">↵</button>
+            </form>
+            <h2>Daily case</h2>
+            <p class="preview-description">
+              Loads today’s puzzle and any saved play. The page shows the introduction or resumes
+              the current phase.
+            </p>
+            <p class="route-label"><span>URL</span><code>/daily</code></p>
+            <section class="preview-api" aria-labelledby="api-title">
+              <h3 id="api-title">API</h3>
+              <div class="endpoint-heading">
+                <span class="method get">GET</span
+                ><a href="/demo/#/features/daily/api/getToday">/daily/today</a
+                ><a class="endpoint-open" href="/demo/#/features/daily/api/getToday"
+                  >Open endpoint <span aria-hidden="true">→</span></a
+                >
+              </div>
+              <p class="endpoint-purpose">Load today’s case and saved play.</p>
+              <div class="io-grid">
+                <section>
+                  <h4>Request</h4>
+                  <p class="request-part">Query</p>
+                  <div class="signature">
+                    <a href="/demo/#/features/daily/types/%40operation%2FgetToday%2Fquery"
+                      >GetTodayQuery</a
+                    >
+                    {
+                    <div class="signature-body">
+                      <div>date: string;</div>
+                      <div>deviceId: string;</div>
+                    </div>
+                    }
+                  </div>
+                </section>
+                <section>
+                  <h4>Response 200</h4>
+                  <div class="signature">
+                    <a href="/demo/#/features/daily/types/DailyTodayResponse">DailyTodayResponse</a>
+                    {
+                    <div class="signature-body">
+                      <div>
+                        case:
+                        <a href="/demo/#/features/daily/types/DailyCaseView">DailyCaseView</a>
+                        <button
+                          class="object-pill"
+                          type="button"
+                          aria-label="Expand DailyCaseView fields"
+                          aria-expanded="false"
+                          aria-controls="case-fields"
+                          data-type-toggle
+                        >
+                          {...}
+                        </button>
+                        | null;
+                      </div>
+                      <div id="case-fields" class="preview-type-fields" hidden>
+                        <div>number: integer;</div>
+                        <div>date: string;</div>
+                        <div>title: string;</div>
+                        <div>imageUrl: string;</div>
+                        <div>
+                          bots:
+                          <a href="/demo/#/features/daily/types/DailyBot">DailyBot</a>[];
+                        </div>
+                      </div>
+                      <div>
+                        play:
+                        <a href="/demo/#/features/daily/types/DailyPlayState">DailyPlayState</a>
+                        <button
+                          class="object-pill"
+                          type="button"
+                          aria-label="Expand DailyPlayState fields"
+                          aria-expanded="false"
+                          aria-controls="play-fields"
+                          data-type-toggle
+                        >
+                          {...}
+                        </button>
+                        | null;
+                      </div>
+                      <div id="play-fields" class="preview-type-fields" hidden>
+                        <div>playId: string;</div>
+                        <div>
+                          case:
+                          <a href="/demo/#/features/daily/types/DailyCaseView">DailyCaseView</a>;
+                        </div>
+                        <div>
+                          phase: <a href="/demo/#/features/daily/types/DailyPhase">DailyPhase</a>;
+                        </div>
+                        <div>
+                          <a href="/demo/#/features/daily/types/DailyPlayState"
+                            >View all fields →</a
+                          >
+                        </div>
+                      </div>
+                      <div>streak: integer;</div>
+                    </div>
+                    }
+                  </div>
+                </section>
+              </div>
+            </section>
+            <p class="preview-hint">
+              Expand <span class="object-pill" aria-hidden="true">{...}</span> to read fields.
+              Follow a type to see where it’s used.
+            </p>
+            <section class="preview-section">
+              <h4>Behaviour</h4>
+              <p>
+                A missing case shows an unavailable state. An existing play resumes without starting
+                another.
+              </p>
+            </section>
+            <section class="preview-section">
+              <h4>Checks</h4>
+              <p>
+                <span class="check-dot" aria-hidden="true"></span>23 linked checks passed in the
+                saved local pilot.
+              </p>
+            </section>
+            <div class="preview-foot">
+              <span>One feature. Types, rules and checks connected.</span
+              ><a href="/demo/#/changes">View changes <span aria-hidden="true">→</span></a>
+            </div>
+          </div>
+        </div>
+      </section>
+      <ol class="workflow" aria-label="Workflow">
+        <li>
+          <span class="step-number">01</span>
+          <h2>Agree</h2>
+          <p>Behaviour, interfaces and examples.<br />A contract you can review before coding.</p>
+        </li>
+        <li>
+          <span class="step-number">02</span>
+          <h2>Review</h2>
+          <p>Linked types and iteration diffs.<br />See exactly what changed.</p>
+        </li>
+        <li>
+          <span class="step-number">03</span>
+          <h2>Verify</h2>
+          <p>Checks tied to the contract.<br />Keep passing, failing and stale distinct.</p>
+        </li>
+      </ol>
+      <section class="start-section" aria-labelledby="start-title">
+        <div>
+          <p class="eyebrow">Start small</p>
+          <h2 id="start-title">One feature.<br />One shared understanding.</h2>
+          <p>
+            Adopt a feature you already have, or describe the next one. Five repository-local skills
+            help Codex and Claude discover, specify, implement, verify and reconcile it.
+          </p>
+          <a href="/docs/">Read the getting-started guide <span aria-hidden="true">→</span></a>
+        </div>
+        <div class="quickstart">
+          <div class="code-header">
+            <span>From a source checkout</span
+            ><button
+              type="button"
+              class="copy-button"
+              data-copy-target="start-commands"
+              aria-label="Copy source checkout commands"
+            >
+              Copy
+            </button>
+          </div>
+          <pre id="start-commands"><code>git clone https://github.com/rbsx/mhproto.git
+cd mhproto
+npm ci
+npm run check</code></pre>
+          <p>Then, from your application:</p>
+          <div class="code-header">
+            <span>Codex · <a href="/docs/#install">Claude instructions</a></span
+            ><button
+              type="button"
+              class="copy-button"
+              data-copy-target="app-commands"
+              aria-label="Copy application setup commands"
+            >
+              Copy
+            </button>
+          </div>
+          <pre id="app-commands"><code>npm install -D /path/to/mhproto
+npx mhproto init --agent codex
+npx mhproto view</code></pre>
+          <p class="note">Node 22+. Source preview; not published to npm.</p>
+          <p id="copy-status" class="copy-status" role="status" aria-live="polite"></p>
+        </div>
+      </section>
+    </main>
+    <footer class="site-footer wrap">
+      <div>
+        <a class="brand" href="/"><span class="brand-mark">[mh]</span><span>mhproto</span></a
+        ><span class="footer-caption">Machine–Human Protocol</span>
+      </div>
+      <div class="footer-right">
+        <nav aria-label="Footer">
+          <a href="/docs/">Docs</a><a href="https://github.com/rbsx/mhproto">GitHub ↗</a>
+        </nav>
+        <span class="footer-caption">Local by design. MIT-licensed.</span>
+      </div>
+    </footer>
+    <script src="/site.js" defer></script>
+  </body>
+</html>
