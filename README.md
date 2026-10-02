@@ -74,7 +74,7 @@ Node 22+. `npm install`, `npm test`, `npm pack`. The CLI and viewer run directly
 
 ## Visual references
 
-Attach a screenshot, design image/PDF or HTTPS design link to a feature, endpoint, request, response, shared object, individual field, scenario, rule or check. The small Add visual action opens an inline form. Field/object actions appear on hover or keyboard focus; existing visuals remain visible beside their target. Supported files: PNG, JPEG, WebP, GIF and PDF, up to 8 MB. Design links open their source rather than loading an embedded design app. The metadata format is in the bundled format reference.
+Attach a screenshot, design image/PDF or HTTPS design link using the single `+` after a feature/endpoint description, scenario, rule or check text, or alongside a Request/Response header. The action appears on hover or keyboard focus and opens an inline form. Schema signatures and nested object fields only render types and expansion; they do not create attachment controls. Existing field/schema references appear beneath the matching request/response header. Supported files: PNG, JPEG, WebP, GIF and PDF, up to 8 MB. Design links open their source rather than loading an embedded design app. The metadata format is in the bundled format reference.
 
 Collapsed object fields show a pale-yellow `{...}`; optional markers, nullability, arrays and constraints remain visible. Expand in place to inspect their fields.
 

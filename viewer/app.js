@@ -14,16 +14,53 @@ const method = op => `<span class="method ${escape(op.method.toLowerCase())}">${
 const clean = value => String(value ?? '').replace(/`|\*\*/g,'');
 const checkTitle = check => (check.title??check.id).replace(/^(?:[A-Z][A-Z0-9.-]+\s+)+/,'');
 const target = (cap,kind,id,extra={}) => ({capability:cap.id,kind,...(id?{id}:{}),...extra});
-const pointer = name => name.replaceAll('~','~0').replaceAll('/','~1');
 const sameTarget = (a,b) => ['capability','kind','id','scope','status','path'].every(k=>String(a?.[k]??'')===String(b?.[k]??''));
-function visualSlot(t,compact=false) {
-  const visuals=(project.visuals??[]).filter(v=>sameTarget(v.target,t));
-  return `<div class="visual-slot${compact?' compact':''}" data-visual-target="${escape(JSON.stringify(t))}">${visuals.length?`<div class="visual-gallery">${visuals.map(v=>{
+// Attachment placement is owned by text/header components, never by schema rendering.
+const attachmentPolicy = Object.freeze({
+  feature:'text',operation:'text',rule:'text',example:'text',check:'text',
+  request:'header',response:'header',
+});
+let attachmentOwners = new Set();
+function referencedSchemas(cap,schemas) {
+  const names=new Set();
+  const visit=node=>{
+    if(!node||typeof node!=='object')return;
+    const ref=node.$ref?.match(/^#\/components\/schemas\/(.+)$/)?.[1];
+    if(ref){const name=ref.replaceAll('~1','/').replaceAll('~0','~');if(!names.has(name)){names.add(name);visit(cap.openapi.components?.schemas?.[name]);}}
+    for(const [key,value] of Object.entries(node))if(key!=='$ref')visit(value);
+  };
+  visit(schemas);return names;
+}
+function visualsForSurface(t) {
+  const cap=project.capabilities.find(c=>c.id===t.capability),op=cap.operations.find(o=>o.operationId===t.id);
+  const schemas=t.kind==='request'?[op?.requestBody,...(op?.parameters??[])]:t.kind==='response'?op?.responses?.[t.status]:null;
+  const names=referencedSchemas(cap,schemas);
+  return (project.visuals??[]).filter(v=>sameTarget(v.target,t)||(
+    ['request','response'].includes(t.kind)&&v.target.capability===t.capability&&(
+      (v.target.kind==='field'&&v.target.id===t.id&&v.target.scope===t.kind&&(!v.target.status||String(v.target.status)===String(t.status)))||
+      (v.target.kind==='schema'&&names.has(v.target.id))
+    )
+  ));
+}
+function visualGallery(t) {
+  const visuals=visualsForSurface(t);
+  return visuals.length?`<div class="visual-gallery">${visuals.map(v=>{
     const source=v.url||(embedded?media[v.id]:'/api/visuals/'+encodeURIComponent(v.id));
     const mime=v.mime??({'png':'image/png','jpg':'image/jpeg','jpeg':'image/jpeg','webp':'image/webp','gif':'image/gif','pdf':'application/pdf'})[v.file?.split('.').pop().toLowerCase()];
     const image=v.file&&mime?.startsWith('image/')&&source;
-    return `<figure class="visual"><a href="${escape(source??'#')}" target="_blank" rel="noopener noreferrer"${embedded&&mime==='application/pdf'?` download="${escape(v.file.split('/').pop())}"`:''}>${image?`<img src="${escape(source)}" alt="${escape(v.title)}" loading="lazy">`:''}<span>${escape(v.title)}${v.url?' ↗':''}</span></a>${v.caption?`<figcaption>${escape(v.caption)}</figcaption>`:''}</figure>`;
-  }).join('')}</div>`:''}<button class="text-button add-visual" data-add-visual aria-label="Attach visual to ${escape(t.path??t.id??'feature')}">${compact?'＋':'Add visual'}</button><div class="visual-editor" hidden></div></div>`;
+    const context=v.target.kind==='field'?v.target.path:v.target.kind==='schema'?v.target.id:null;
+    return `<figure class="visual">${context?`<span class="visual-context">${escape(context)}</span>`:''}<a href="${escape(source??'#')}" target="_blank" rel="noopener noreferrer"${embedded&&mime==='application/pdf'?` download="${escape(v.file.split('/').pop())}"`:''}>${image?`<img src="${escape(source)}" alt="${escape(v.title)}" loading="lazy">`:''}<span>${escape(v.title)}${v.url?' ↗':''}</span></a>${v.caption?`<figcaption>${escape(v.caption)}</figcaption>`:''}</figure>`;
+  }).join('')}</div>`:'';
+}
+function attachmentBlock(t,content,{tag='p',className='',label=t.id??'feature'}={}) {
+  const placement=attachmentPolicy[t.kind];
+  if(!placement)throw new Error('No attachment control is permitted for '+t.kind);
+  if((placement==='header')!==(tag==='h3'))throw new Error('Attachment control has an invalid placement');
+  const key=JSON.stringify([t.capability,t.kind,t.id??'',t.scope??'',t.status??'',t.path??'']);
+  // Repeated read-only text may link the same target; only its first surface owns editing.
+  if(attachmentOwners.has(key))return `<${tag} class="${escape(className)}">${content}</${tag}>`;
+  attachmentOwners.add(key);
+  return `<div class="attachment-block" data-visual-target="${escape(JSON.stringify(t))}"><${tag} class="attachment-zone ${escape(className)}" data-attachment-zone>${content}<button class="text-button add-visual" data-add-visual aria-label="Attach visual to ${escape(label)}" title="Attach visual">+</button></${tag}>${visualGallery(t)}<div class="visual-editor" hidden></div></div>`;
 }
 
 function route() {
@@ -86,7 +123,7 @@ function nestedObjects(cap,input,seen) {
   if(s.type==='array')return nestedObjects(cap,s.items,seen).map(item=>({...item,suffix:item.suffix+'[]'}));
   return (s.anyOf??s.oneOf??s.allOf??[]).flatMap(item=>nestedObjects(cap,item,seen));
 }
-function objectSignature(cap,input,depth=0,seen=new Set(),context=null) {
+function objectSignature(cap,input,depth=0,seen=new Set()) {
   if(input?.$ref&&seen.has(input.$ref))return '<span class="field-type">{ recursive object }</span>';
   const next=new Set(seen);if(input?.$ref)next.add(input.$ref);
   const s=resolveSchema(cap,input);
@@ -94,14 +131,11 @@ function objectSignature(cap,input,depth=0,seen=new Set(),context=null) {
   const fields=Object.entries(s.properties).map(([name,p])=>{
     const resolved=resolveSchema(cap,p), optional=(s.required??[]).includes(name)?'':'?';
     const label=`<span class="field-name">${escape(name+optional)}:</span> <span class="field-type">${escape(typeLabel(cap,p)).replaceAll('{...}','<span class="object-pill">{...}</span>')}</span>${constraint(resolved)}`;
-    const fieldContext=context?{...context,path:(context.path??'')+'/'+pointer(name)}:null;
-    const visual=fieldContext?visualSlot(target(cap,'field',fieldContext.id,fieldContext),true):'';
     const objects=nestedObjects(cap,p,next);
-    if(objects.length&&depth<7&&!(p.$ref&&next.has(p.$ref)))return `<details class="inline-object"><summary>${label}</summary><div>${visual}${objects.map(obj=>objectSignature(cap,obj.schema,depth+1,next,fieldContext?{...fieldContext,path:fieldContext.path+'/*'.repeat((obj.suffix.match(/\[\]/g)??[]).length)}:null)).join('')}${resolved.description?`<p class="field-note">${escape(resolved.description)}</p>`:''}</div></details>`;
-    return `<div class="field">${label};${visual}</div>`;
+    if(objects.length&&depth<7&&!(p.$ref&&next.has(p.$ref)))return `<details class="inline-object"><summary>${label}</summary><div>${objects.map(obj=>objectSignature(cap,obj.schema,depth+1,next)).join('')}${resolved.description?`<p class="field-note">${escape(resolved.description)}</p>`:''}</div></details>`;
+    return `<div class="field">${label};</div>`;
   }).join('');
-  const schemaName=input?.$ref?.match(/^#\/components\/schemas\/(.+)$/)?.[1];
-  return `${schemaName?visualSlot(target(cap,'schema',schemaName),true):''}<div class="signature">{<div class="signature-body">${fields}</div>}</div>`;
+  return `<div class="signature">{<div class="signature-body">${fields}</div>}</div>`;
 }
 function parameterSchema(parameters) {
   return {type:'object',properties:Object.fromEntries(parameters.map(p=>[p.name,p.schema??{}])),required:parameters.filter(p=>p.required).map(p=>p.name)};
@@ -110,16 +144,16 @@ function requestSignature(cap,op) {
   const parts=[];
   for(const location of ['path','query','header','cookie']){
     const params=(op.parameters??[]).filter(p=>p.in===location);
-    if(params.length)parts.push(`<p class="request-part">${escape(location.charAt(0).toUpperCase()+location.slice(1))}</p>${objectSignature(cap,parameterSchema(params),0,new Set(),{id:op.operationId,scope:'request',path:'/'+location})}`);
+    if(params.length)parts.push(`<p class="request-part">${escape(location.charAt(0).toUpperCase()+location.slice(1))}</p>${objectSignature(cap,parameterSchema(params))}`);
   }
   const body=op.requestBody?.content?.['application/json']?.schema;
-  if(body)parts.push(`<p class="request-part">JSON body${op.requestBody.required?'':' · optional'}</p>${objectSignature(cap,body,0,new Set(),{id:op.operationId,scope:'request',path:'/body'})}`);
+  if(body)parts.push(`<p class="request-part">JSON body${op.requestBody.required?'':' · optional'}</p>${objectSignature(cap,body)}`);
   return parts.join('')||'<div class="signature">No parameters or body.</div>';
 }
 function successResponse(op) { return Object.entries(op.responses??{}).find(([status])=>/^2\d\d$/.test(status))??Object.entries(op.responses??{})[0]??['—',{}]; }
 function io(cap,op) {
   const [status,res]=successResponse(op);
-  return `<div class="io-grid"><section><h3 class="io-heading">Request</h3>${visualSlot(target(cap,'request',op.operationId),true)}${requestSignature(cap,op)}</section><section><h3 class="io-heading">Response <strong>${escape(status)}</strong></h3>${visualSlot(target(cap,'response',op.operationId,{status}),true)}${res.content?.['application/json']?.schema?objectSignature(cap,res.content['application/json'].schema,0,new Set(),{id:op.operationId,scope:'response',status,path:''}):'<div class="signature">No response body.</div>'}</section></div>`;
+  return `<div class="io-grid"><section>${attachmentBlock(target(cap,'request',op.operationId),'Request',{tag:'h3',className:'io-heading',label:'Request'})}${requestSignature(cap,op)}</section><section>${attachmentBlock(target(cap,'response',op.operationId,{status}),`Response <strong>${escape(status)}</strong>`,{tag:'h3',className:'io-heading',label:'Response '+status})}${res.content?.['application/json']?.schema?objectSignature(cap,res.content['application/json'].schema):'<div class="signature">No response body.</div>'}</section></div>`;
 }
 
 function diagram(title,source) {
@@ -165,9 +199,9 @@ function checksSection(cap,checks=cap.checks,rules=cap.rules) {
   return `<section class="checks-section"><h2>Checks</h2><p class="section-note">${escape(summary)}${gaps.length?` ${gaps.length} ${gaps.length===1?'rule still needs':'rules still need'} a linked check.`:''}</p>${attention.length?disclosure('Needs attention · '+attention.length,checksList(cap,attention),true):''}${passing.length?disclosure('Passing checks · '+passing.length,checksList(cap,passing)):''}${gaps.length?disclosure('Rules without checks · '+gaps.length,`<ul class="check-list">${gaps.map(r=>`<li>${ruleLink(cap,r.id,cap.presentation?.ruleTitles?.[r.id]??clean(r.text.split('\n')[0]))}</li>`).join('')}</ul>`):''}${disclosure('Scope of this evidence','<p class="section-note">A passing run establishes what the linked tests observed. It does not cover every case or live model behaviour. Tracked source changes make the evidence stale.</p>'+(cap.gaps??[]).map(g=>`<p class="section-note">${escape(g)}</p>`).join(''))}</section>`;
 }
 function overview(cap) {
-  return `<header><h1>${escape(cap.title??cap.id)}</h1><p class="description">${escape(cap.description??'Describe what this page loads, shows and lets the user do.')}</p>${cap.url?`<p class="feature-url"><span>URL</span><code>${escape(cap.url)}</code></p>`:''}</header>${visualSlot(target(cap,'feature'))}<section id="api"><h2>API</h2>${orderedOperations(cap).map(op=>{
+  return `<header><h1>${escape(cap.title??cap.id)}</h1>${attachmentBlock(target(cap,'feature'),escape(cap.description??'Describe what this page loads, shows and lets the user do.'),{className:'description',label:cap.title??cap.id})}${cap.url?`<p class="feature-url"><span>URL</span><code>${escape(cap.url)}</code></p>`:''}</header><section id="api"><h2>API</h2>${orderedOperations(cap).map(op=>{
     const info=operationPresentation(cap,op);
-    return `<article class="endpoint" data-operation="${escape(op.operationId)}"><h3 class="endpoint-heading">${method(op)}<a href="${escape(endpointUrl(cap,op))}">${escape(op.path)}</a></h3><p class="endpoint-summary">${escape(op.summary??op.operationId)}</p>${visualSlot(target(cap,'operation',op.operationId),true)}${io(cap,op)}<p class="behaviour-preview"><b>Behaviour.</b> ${escape(info.behaviour??clean(rulesFor(cap,op)[0]?.text??'No behaviour rules linked yet.'))}</p></article>`;
+    return `<article class="endpoint" data-operation="${escape(op.operationId)}"><h3 class="endpoint-heading">${method(op)}<a href="${escape(endpointUrl(cap,op))}">${escape(op.path)}</a></h3>${attachmentBlock(target(cap,'operation',op.operationId),escape(op.summary??op.operationId),{className:'endpoint-summary',label:op.path})}${io(cap,op)}<p class="behaviour-preview"><b>Behaviour.</b> ${escape(info.behaviour??clean(rulesFor(cap,op)[0]?.text??'No behaviour rules linked yet.'))}</p></article>`;
   }).join('')}</section>${markdownDiagrams(cap.prose,'Play states')}${checksSection(cap)}`;
 }
 function errorSection(cap,op) {
@@ -177,20 +211,20 @@ function errorSection(cap,op) {
   return `<section><h2>Errors</h2>${schema?objectSignature(cap,schema):''}<table class="table"><thead><tr><th>Status</th><th>Code</th><th>When</th></tr></thead><tbody>${errors.flatMap(([status,r])=>(r['x-error-codes']??[{code:'—',when:clean(r.description)}]).map(e=>`<tr><td>${escape(status)}</td><td><code>${escape(e.code)}</code></td><td>${escape(e.when)}${e.clause?' · '+ruleLink(cap,e.clause,'Rule',op):''}</td></tr>`)).join('')}</tbody></table></section>`;
 }
 function scenario(cap,e) {
-  return `<article class="scenario"><h3>${escape(e.title??e.id)}</h3>${['given','when','then'].map(k=>`<div class="scenario-line"><b>${k.charAt(0).toUpperCase()+k.slice(1)}</b><span>${prose(e[k])}</span></div>`).join('')}${visualSlot(target(cap,'example',e.id))}${e.request?disclosure('Payload example',raw({request:e.request,response:e.response})):''}</article>`;
+  return `<article class="scenario"><h3>${escape(e.title??e.id)}</h3>${attachmentBlock(target(cap,'example',e.id),['given','when','then'].map(k=>`<div class="scenario-line"><b>${k.charAt(0).toUpperCase()+k.slice(1)}</b><span>${prose(e[k])}</span></div>`).join(''),{tag:'div',className:'scenario-text',label:e.title??e.id})}${e.request?disclosure('Payload example',raw({request:e.request,response:e.response})):''}</article>`;
 }
 function endpointPage(cap,op) {
   const info=operationPresentation(cap,op), rules=rulesFor(cap,op);
   const examples=cap.examples.filter(e=>(e.operations??[]).includes(op.operationId));
   const checks=cap.checks.filter(c=>(c.rules??[]).some(id=>rules.some(r=>r.id===id))||(c.examples??[]).some(id=>examples.some(e=>e.id===id)));
   const groups=info.ruleGroups??[], grouped=new Set(groups.flatMap(g=>g.rules));
-  const ruleList=items=>`<ul class="rule-list">${items.map(r=>`<li id="${escape(r.id)}"><div class="rule-text">${prose(r.text)}</div><a class="rule-id" href="${escape(endpointUrl(cap,op,r.id))}">${escape(r.id)}</a>${visualSlot(target(cap,'rule',r.id),true)}</li>`).join('')}</ul>`;
-  return `<a class="back" href="${escape(featureUrl(cap))}">← ${escape(cap.title??cap.id)}</a><header><h1 class="endpoint-title">${method(op)} ${escape(op.path)}</h1><p class="description">${escape(info.description??op.summary??op.operationId)}</p></header><div class="page-actions"><button class="text-button" data-copy-url>Copy page link</button></div>${visualSlot(target(cap,'operation',op.operationId))}${io(cap,op)}<section><h2>Behaviour</h2>${info.behaviour?`<p class="description">${escape(info.behaviour)}</p>`:''}${ruleList(rules.filter(r=>!grouped.has(r.id)))}${groups.map(group=>disclosure(group.title,ruleList(rules.filter(r=>group.rules.includes(r.id))))).join('')}</section>${operationDiagrams(cap,op)}${errorSection(cap,op)}${examples.length?`<section><h2>Examples</h2>${examples.map(e=>scenario(cap,e)).join('')}</section>`:''}${checksSection(cap,checks,rules)}${disclosure('Payload examples',raw({request:op.requestBody?.content?.['application/json']?.example,responses:Object.fromEntries(Object.entries(op.responses??{}).filter(([,r])=>r.content?.['application/json']?.example).map(([status,r])=>[status,r.content['application/json'].example]))}))}`;
+  const ruleList=items=>`<ul class="rule-list">${items.map(r=>`<li id="${escape(r.id)}">${attachmentBlock(target(cap,'rule',r.id),prose(r.text),{tag:'div',className:'rule-text',label:r.id})}<a class="rule-id" href="${escape(endpointUrl(cap,op,r.id))}">${escape(r.id)}</a></li>`).join('')}</ul>`;
+  return `<a class="back" href="${escape(featureUrl(cap))}">← ${escape(cap.title??cap.id)}</a><header><h1 class="endpoint-title">${method(op)} ${escape(op.path)}</h1>${attachmentBlock(target(cap,'operation',op.operationId),escape(info.description??op.summary??op.operationId),{className:'description',label:op.path})}</header><div class="page-actions"><button class="text-button" data-copy-url>Copy page link</button></div>${io(cap,op)}<section><h2>Behaviour</h2>${info.behaviour?`<p class="description">${escape(info.behaviour)}</p>`:''}${ruleList(rules.filter(r=>!grouped.has(r.id)))}${groups.map(group=>disclosure(group.title,ruleList(rules.filter(r=>group.rules.includes(r.id))))).join('')}</section>${operationDiagrams(cap,op)}${errorSection(cap,op)}${examples.length?`<section><h2>Examples</h2>${examples.map(e=>scenario(cap,e)).join('')}</section>`:''}${checksSection(cap,checks,rules)}${disclosure('Payload examples',raw({request:op.requestBody?.content?.['application/json']?.example,responses:Object.fromEntries(Object.entries(op.responses??{}).filter(([,r])=>r.content?.['application/json']?.example).map(([status,r])=>[status,r.content['application/json'].example]))}))}`;
 }
 function checkPage(cap,check) {
   const r=evidenceResult(cap,check), expected=new Set(check.testNames??[]);
   const observed=(r.tests??[]).filter(t=>expected.has(t.name)||t.type==='test:fail');
-  return `<a class="back" href="${escape(featureUrl(cap))}">← ${escape(cap.title??cap.id)}</a><h1>${escape(checkTitle(check))}</h1>${visualSlot(target(cap,'check',check.id))}<p class="section-note ${r.status==='failing'?'failing':''}">${escape(statusLabel(r.status))}</p>${r.status==='stale'?'<p class="description">The tracked sources changed. Run this check again to refresh its evidence.</p>':''}${r.error?`<p class="error">${escape(r.error)}</p>`:''}${r.missing?.length?`<p class="error">Expected tests did not run: ${escape(r.missing.join(', '))}</p>`:''}${r.stderr?disclosure('Error output',`<pre>${escape(r.stderr)}</pre>`,r.status==='failing'):''}${observed.length?disclosure('Observed tests',observed.map(t=>`<p class="section-note">${t.skip?'Skipped':t.type==='test:fail'?'Failed':'Passed'} · ${escape(t.name)}</p>`).join(''),r.status==='failing'):''}<h2>Behaviour checked</h2><ul class="check-list">${(check.rules??[]).map(id=>`<li>${ruleLink(cap,id,clean(cap.rules.find(x=>x.id===id)?.text.split('\n')[0]??id))}</li>`).join('')}</ul>${disclosure('Run details',raw({command:check.command,durationMs:r.durationMs,exitCode:r.exitCode}))}`;
+  return `<a class="back" href="${escape(featureUrl(cap))}">← ${escape(cap.title??cap.id)}</a><h1>${escape(checkTitle(check))}</h1>${attachmentBlock(target(cap,'check',check.id),escape(statusLabel(r.status)),{className:'section-note '+(r.status==='failing'?'failing':''),label:checkTitle(check)})}${r.status==='stale'?'<p class="description">The tracked sources changed. Run this check again to refresh its evidence.</p>':''}${r.error?`<p class="error">${escape(r.error)}</p>`:''}${r.missing?.length?`<p class="error">Expected tests did not run: ${escape(r.missing.join(', '))}</p>`:''}${r.stderr?disclosure('Error output',`<pre>${escape(r.stderr)}</pre>`,r.status==='failing'):''}${observed.length?disclosure('Observed tests',observed.map(t=>`<p class="section-note">${t.skip?'Skipped':t.type==='test:fail'?'Failed':'Passed'} · ${escape(t.name)}</p>`).join(''),r.status==='failing'):''}<h2>Behaviour checked</h2><ul class="check-list">${(check.rules??[]).map(id=>`<li>${ruleLink(cap,id,clean(cap.rules.find(x=>x.id===id)?.text.split('\n')[0]??id))}</li>`).join('')}</ul>${disclosure('Run details',raw({command:check.command,durationMs:r.durationMs,exitCode:r.exitCode}))}`;
 }
 function sourcesPage(cap) {
   return `<a class="back" href="${escape(featureUrl(cap))}">← ${escape(cap.title??cap.id)}</a><h1>Sources</h1><p class="description">The feature reads these existing contract files. Edit them in your editor or through your agent.</p><table class="table"><tbody>${Object.entries(cap.files).map(([kind,file])=>`<tr><td>${escape(kind)}</td><td class="source-path">${escape(file)}</td></tr>`).join('')}</tbody></table>${disclosure('Tracked implementation',raw(cap.sources))}${disclosure('Complete behaviour document',`<div class="rule-text">${prose(cap.prose)}</div>`+markdownDiagrams(cap.prose,'State diagram'))}${disclosure('System map',`<div class="rule-text">${prose(project.system)}</div>`+markdownDiagrams(project.system,'System diagram'))}${disclosure('Local commands','<pre>bive check\nbive verify --capability '+escape(cap.id)+'\nbive snapshot\nbive diff</pre>')}`;
@@ -213,6 +247,7 @@ function searchResults() {
   return `<h1>Search</h1>${found.length?found.map(f=>`<article class="search-result"><a href="${escape(f.url)}">${escape(f.title)}</a><p>${escape(f.note)}</p></article>`).join(''):'<p class="empty">No matches.</p>'}`;
 }
 function render() {
+  attachmentOwners=new Set();
   const version=++generation, state=route(),cap=state.cap;
   $('#project-name').textContent=project.name;
   $('#home').href=featureUrl(project.capabilities[0]);
@@ -249,7 +284,7 @@ document.addEventListener('click',async event=>{
     editor.querySelector('[name=title]').focus();return;
   }
   const cancel=event.target.closest('[data-cancel-visual]');
-  if(cancel){const slot=cancel.closest('[data-visual-target]');slot.querySelector(':scope > .visual-editor').hidden=true;slot.querySelector(':scope > [data-add-visual]').hidden=false;return;}
+  if(cancel){const slot=cancel.closest('[data-visual-target]'),add=slot.querySelector(':scope > [data-attachment-zone] > [data-add-visual]');slot.querySelector(':scope > .visual-editor').hidden=true;add.hidden=false;add.focus();return;}
   const button=event.target.closest('[data-copy-url]');if(!button)return;
   try{await navigator.clipboard.writeText(location.href);button.textContent='Link copied';}
   catch{button.textContent='Copy the address from your browser';}

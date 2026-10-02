@@ -26,6 +26,7 @@ async function fixture({change=()=>{},hash='',realMermaid=false}={}) {
   change(project);
   const dom=new JSDOM(await readFile(path.join(packageRoot,'viewer/index.html'),'utf8'),{runScripts:'outside-only',url:'https://bive.test/'+hash});
   const {window}=dom,doc=window.document;window.scrollTo=()=>{};
+  const style=doc.createElement('style');style.textContent=await readFile(path.join(packageRoot,'viewer/style.css'),'utf8');doc.head.append(style);
   const element=doc.createElement('script');element.id='bive-model';element.type='application/json';element.textContent=JSON.stringify(project);doc.body.append(element);
   if(realMermaid){
     window.structuredClone=structuredClone;
@@ -130,6 +131,67 @@ test('visual editor validates file/link choice without losing the endpoint',asyn
   form.dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true}));await window.biveAttachmentReady;
   assert.ok(form.querySelector('[role=status]').textContent.includes('Choose one'));
   assert.ok(doc.querySelector('.io-grid'));dom.window.close();
+});
+
+test('shared and expanded request/response objects have no attachment actions; each header owns one',async()=>{
+  const {dom,doc}=await fixture({hash:'#/features/example/api/setStatus',change:p=>{
+    // Reproduce the screenshot: root refs, path parameters, a JSON body and nested refs.
+    p.capabilities[0].operations[1].requestBody.content['application/json'].schema={$ref:'#/components/schemas/Status'};
+  }});
+  for(const detail of doc.querySelectorAll('.inline-object'))detail.open=true;
+  for(const section of doc.querySelectorAll('.io-grid>section')){
+    assert.equal(section.querySelectorAll('[data-add-visual]').length,1);
+    const header=section.querySelector('.io-heading');assert.equal(header.querySelectorAll(':scope > [data-add-visual]').length,1);
+    assert.equal(header.lastElementChild.textContent,'+');
+  }
+  assert.equal(doc.querySelectorAll('.signature [data-add-visual],.inline-object [data-add-visual]').length,0);
+  assert.equal(doc.querySelectorAll('[data-attachment-zone] [data-attachment-zone]').length,0);
+  const owners=[...doc.querySelectorAll('[data-visual-target]')];
+  assert.ok(owners.every(e=>!['field','schema'].includes(JSON.parse(e.dataset.visualTarget).kind)));
+  assert.equal(new Set(owners.map(e=>e.dataset.visualTarget)).size,owners.length);
+  dom.window.close();
+});
+
+test('hovering a header or text block targets one plus; hovering an object field targets none',async()=>{
+  const {dom,doc,window}=await fixture({hash:'#/features/example/api/setStatus'});
+  // JSDOM tracks :hover for selector matching, but does not recalculate painted CSS.
+  // Match the stylesheet's real hover rules rather than claiming pixel-level browser QA.
+  const selectors=[...doc.styleSheets].flatMap(s=>[...s.cssRules]).filter(r=>r.selectorText?.includes(':hover')&&r.style?.opacity==='1').map(r=>r.selectorText);
+  const hoveredButtons=()=>new Set(selectors.flatMap(selector=>[...doc.querySelectorAll(selector)]).filter(e=>e.matches('[data-add-visual]:not([hidden])')));
+  const hover=e=>e.dispatchEvent(new window.MouseEvent('mouseover',{bubbles:true}));
+  for(const header of doc.querySelectorAll('.io-heading')){hover(header);assert.equal(hoveredButtons().size,1);assert.equal([...hoveredButtons()][0].parentElement,header);}
+  const text=doc.querySelector('header .description');hover(text);assert.equal(hoveredButtons().size,1);
+  for(const field of doc.querySelectorAll('.signature .field')){hover(field);assert.equal(hoveredButtons().size,0);}
+  for(const section of doc.querySelectorAll('.io-grid>section')){hover(section);assert.equal(hoveredButtons().size,0);}
+  dom.window.close();
+});
+
+test('existing field and schema visuals appear under their response header without restoring object controls',async()=>{
+  const {dom,doc}=await fixture({hash:'#/features/example/api/setStatus',change:p=>{
+    p.visuals=[
+      {id:'field',title:'Owner selection',url:'https://example.com/owner',target:{capability:'example',kind:'field',id:'setStatus',scope:'response',status:'201',path:'/owner'}},
+      {id:'schema',title:'User card',url:'https://example.com/user',target:{capability:'example',kind:'schema',id:'User'}},
+    ];
+  }});
+  const section=doc.querySelectorAll('.io-grid>section')[1],surface=section.querySelector('.attachment-block');
+  assert.equal(surface.querySelectorAll('.visual-gallery .visual').length,2);
+  assert.ok(surface.textContent.includes('/owner'));assert.ok(surface.textContent.includes('User'));
+  assert.equal(section.querySelectorAll('[data-add-visual]').length,1);
+  assert.equal(section.querySelectorAll('.signature .visual-gallery,.inline-object [data-add-visual]').length,0);
+  dom.window.close();
+});
+
+test('a repeated rule target has one attachment owner and closing its editor restores keyboard focus',async()=>{
+  const {dom,doc,click}=await fixture({hash:'#/features/example/api/setStatus',change:p=>{
+    p.capabilities[0].presentation.operations.setStatus.ruleGroups=[{title:'Permissions',rules:['EXAMPLE-B-2']},{title:'Update prerequisites',rules:['EXAMPLE-B-2']}];
+  }});
+  const owners=[...doc.querySelectorAll('[data-visual-target]')].filter(e=>JSON.parse(e.dataset.visualTarget).kind==='rule');
+  assert.equal(owners.length,1);
+  const header=doc.querySelector('.io-heading'),button=header.querySelector('[data-add-visual]');
+  button.click();assert.ok(button.hidden);
+  await click('.io-grid [data-cancel-visual]');
+  assert.ok(!button.hidden);assert.equal(doc.activeElement,button);assert.ok(header.parentElement.querySelector('.visual-editor').hidden);
+  dom.window.close();
 });
 
 test('checks below API surface failures and gaps while the passing inventory stays closed',async()=>{

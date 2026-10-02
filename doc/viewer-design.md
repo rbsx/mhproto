@@ -43,8 +43,16 @@ DOM tests cover navigation and actual Mermaid SVG rendering using simulated text
 
 ## Visual attachment flow
 
-Choose Add visual beside the feature or endpoint. For requests, responses, object types and individual fields, use the small contextual action. Attach one image/PDF or design link, give it a descriptive title and optionally note the state or source. The result stays beside its target. A shared-object reference appears wherever that schema is rendered; a field reference is scoped to its endpoint and request/response path. Scenarios, rules and checks support the same flow.
+Use the single `+` after a feature/endpoint description, scenario, rule or check text block, or directly alongside a Request/Response header. Attach one image/PDF or design link, give it a descriptive title and optionally note the state or source. The result appears beneath that block/header. Object signatures, nested fields and Path/JSON-body labels do not offer attachment actions. Existing field/shared-object references are displayed beneath the matching header with their field path or type name; their metadata is retained.
 
 The workspace viewer writes files and metadata to the app. The exported preview keeps added visuals in memory until Save preview downloads the amended HTML. The footer and save action communicate that state. Existing attachments are embedded when exporting; their bytes live in a separate registry, outside the project model and agent context packets. Images load lazily; external design apps are linked instead of embedded.
 
 Collapsed objects show only `{...}` in pale yellow. Keep optional markers and nullable/array types alongside it. Do not squeeze nested keys into that placeholder.
+
+## Attachment ownership (0.4.1)
+
+One component owns the text/header, its single creation button, a read-only gallery and its editor. An explicit placement policy permits only text blocks and Request/Response headers to create controls. A page-scoped target registry gives repeated semantic targets one editing owner. The schema renderer has no attachment API or project/media dependency.
+
+Hover and keyboard focus styles address the creation button directly inside its text/header zone. They do not use API-column, field, gallery or ancestor-section hover selectors. Zones do not nest. This prevents hovering over a field from revealing a header action or multiple schema actions.
+
+Regression checks reproduce a request with path parameters plus a shared JSON-body schema, a response with nested shared objects, expanded fields and reused types. They assert one creation control per header, none inside signatures, one matching hover action on a text/header zone and none on fields/columns. Repeated rule targets retain one owner. Existing field/type visuals stay accessible under the header. Cancel restores keyboard focus to the original control. DOM/CSS selector tests do not claim painted browser layout validation.
