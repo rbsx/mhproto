@@ -24,7 +24,7 @@ The pilot uses six diagrams: play states, page-loading branches, retrying a star
 
 ## Visual system
 
-White background, near-black text, neutral separators. Blue links and purple visited links. Colour accents are limited to HTTP methods, focus and errors. Signature fields stay inline; no separate shared-type catalogue.
+White background, near-black text, neutral separators. Blue links and purple visited links. Colour accents are limited to HTTP methods, focus, errors and pale-yellow expandable object placeholders. Signature fields stay inline; no separate shared-type catalogue.
 
 ## Acceptance
 
@@ -40,3 +40,11 @@ White background, near-black text, neutral separators. Blue links and purple vis
 - Responsive layout stacks request/response objects on narrow screens.
 
 DOM tests cover navigation and actual Mermaid SVG rendering using simulated text measurements. Visual browser QA remains blocked by this session’s file/localhost restrictions.
+
+## Visual attachment flow
+
+Choose Add visual beside the feature or endpoint. For requests, responses, object types and individual fields, use the small contextual action. Attach one image/PDF or design link, give it a descriptive title and optionally note the state or source. The result stays beside its target. A shared-object reference appears wherever that schema is rendered; a field reference is scoped to its endpoint and request/response path. Scenarios, rules and checks support the same flow.
+
+The workspace viewer writes files and metadata to the app. The exported preview keeps added visuals in memory until Save preview downloads the amended HTML. The footer and save action communicate that state. Existing attachments are embedded when exporting; their bytes live in a separate registry, outside the project model and agent context packets. Images load lazily; external design apps are linked instead of embedded.
+
+Collapsed objects show only `{...}` in pale yellow. Keep optional markers and nullable/array types alongside it. Do not squeeze nested keys into that placeholder.

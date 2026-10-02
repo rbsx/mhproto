@@ -1,0 +1,28 @@
+{
+  "fullModel": {
+    "characters": 129642,
+    "bytes": 129766
+  },
+  "packets": {
+    "index": {
+      "characters": 980,
+      "bytes": 980,
+      "reductionPercent": 99.24
+    },
+    "tap": {
+      "characters": 8501,
+      "bytes": 8505,
+      "reductionPercent": 93.44
+    },
+    "tapInterface": {
+      "characters": 1914,
+      "bytes": 1914,
+      "reductionPercent": 98.52
+    },
+    "ask": {
+      "characters": 9279,
+      "bytes": 9281,
+      "reductionPercent": 92.84
+    }
+  }
+}

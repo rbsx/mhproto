@@ -87,11 +87,49 @@ test('request constraints and nullable nested response objects stay inline in th
   assert.ok(io.textContent.includes('"ready" | "busy"'));
   const owner=[...io.querySelectorAll('.inline-object')].find(d=>d.querySelector('summary').textContent.startsWith('owner:'));
   assert.ok(owner.querySelector('summary').textContent.includes('| null'));
+  assert.equal(owner.querySelector('.object-pill').textContent,'{...}');
+  assert.ok(!owner.querySelector('summary').textContent.includes('name'));
   owner.open=true;
   assert.ok(owner.textContent.includes('id: string'));
   assert.ok(owner.textContent.includes('name?: string'));
   assert.equal(io.querySelectorAll('a').length,0);
   dom.window.close();
+});
+
+test('visuals stay beside their target, and static attachments survive Save preview with bytes outside the model',async()=>{
+  const {dom,doc,window,click}=await fixture({hash:'#/features/example/api/setStatus',change:p=>{
+    p.visuals=[{id:'design',title:'Update flow',url:'https://www.figma.com/design/example',kind:'design',target:{capability:'example',kind:'operation',id:'setStatus'}}];
+  }});
+  assert.ok(doc.querySelector('.visual-gallery a[href="https://www.figma.com/design/example"]'));
+  const slot=[...doc.querySelectorAll('[data-visual-target]')].find(e=>JSON.parse(e.dataset.visualTarget).kind==='response');
+  slot.querySelector('[data-add-visual]').click();const form=slot.querySelector('form');
+  form.elements.title.value='Updated state';
+  const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a4l8AAAAASUVORK5CYII=','base64');
+  Object.defineProperty(form.elements.file,'files',{value:[new window.File([png],'state.png',{type:'image/png'})]});
+  form.dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true}));await window.biveAttachmentReady;
+  assert.ok(doc.querySelector('.visual img[alt="Updated state"]'));
+  assert.ok(!doc.querySelector('#save-preview').hidden);
+  assert.ok(doc.querySelector('#read-mode').textContent.includes('save to keep'));
+  let saved;window.URL.createObjectURL=blob=>{saved=blob;return 'blob:preview';};window.URL.revokeObjectURL=()=>{};
+  window.HTMLAnchorElement.prototype.click=function(){};
+  await click('#save-preview');
+  const html=await new Promise(resolve=>{const reader=new window.FileReader();reader.onload=()=>resolve(reader.result);reader.readAsText(saved);});
+  const reload=new JSDOM(html,{runScripts:'outside-only',url:'https://bive.test/#/features/example/api/setStatus'});
+  const model=JSON.parse(reload.window.document.querySelector('#bive-model').textContent);
+  assert.equal(model.visuals.length,2);assert.ok(!JSON.stringify(model).includes('base64'));
+  assert.ok(reload.window.document.querySelector('#bive-media').textContent.includes(png.toString('base64')));
+  reload.window.scrollTo=()=>{};reload.window.mermaid={initialize(){},render:async()=>({svg:'<svg></svg>'})};
+  await reload.window.eval(`(async()=>{${await readFile(path.join(packageRoot,'viewer/app.js'),'utf8')}\n})()`);
+  assert.ok(reload.window.document.querySelector('.visual img[alt="Updated state"]'));
+  dom.window.close();reload.window.close();
+});
+
+test('visual editor validates file/link choice without losing the endpoint',async()=>{
+  const {dom,doc,window}=await fixture({hash:'#/features/example/api/setStatus'});
+  doc.querySelector('[data-add-visual]').click();const form=doc.querySelector('.visual-form');form.elements.title.value='Design';
+  form.dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true}));await window.biveAttachmentReady;
+  assert.ok(form.querySelector('[role=status]').textContent.includes('Choose one'));
+  assert.ok(doc.querySelector('.io-grid'));dom.window.close();
 });
 
 test('checks below API surface failures and gaps while the passing inventory stays closed',async()=>{

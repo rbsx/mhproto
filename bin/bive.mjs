@@ -5,6 +5,7 @@ import { parse } from 'yaml';
 import { loadProject, validateProject, packageRoot } from '../src/core.mjs';
 import { verifyCapability } from '../src/verify.mjs';
 import { compareModels, exportViewer, model, serve } from '../src/server.mjs';
+import { contextPacket, encodeContext } from '../src/context.mjs';
 
 const args = process.argv.slice(2);
 const command = args.shift() ?? 'help';
@@ -57,6 +58,11 @@ try {
       console.log(`${issues.filter(i=>i.level==='error').length} errors, ${issues.filter(i=>i.level==='warning').length} warnings`);
     }
     if (issues.some(i => i.level === 'error')) process.exitCode = 1;
+  } else if (command === 'context') {
+    const options = Object.fromEntries(['capability','operation','rule','schema','example','check','visual','section'].map(k => [k, option(k)]));
+    const output = encodeContext(contextPacket(await loadProject(root), options), Number(option('max-chars', '12000')));
+    console.log(output);
+    if (has('stats')) console.error(JSON.stringify({ characters: output.length, bytes: Buffer.byteLength(output), note: 'Exact text sizes; model token counts vary.' }));
   } else if (command === 'inspect') console.log(JSON.stringify(await model(root), null, 2));
   else if (command === 'verify') {
     const project = await loadProject(root), issues = await validateProject(project);
@@ -79,7 +85,7 @@ try {
     if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Invalid port');
     const server = await serve(root, port);
     console.log(`BIVE viewer: http://127.0.0.1:${server.address().port}`);
-    console.log('Read-only, local browser view. Edit source files; the viewer refreshes automatically.');
+    console.log('Local browser view. Visual attachments save to bive/visuals.yaml; source edits refresh automatically.');
     for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => server.close(() => process.exit(0)));
   } else if (command === 'snapshot') {
     const destination = path.resolve(root, option('out', '.bive/baseline.json'));
@@ -95,7 +101,7 @@ try {
     console.log(`Exported viewer: ${destination}. Open viewer.html directly or serve this folder over HTTP.`);
   } else if (command === 'help' || has('help')) {
     const { version } = JSON.parse(await readFile(path.join(packageRoot, 'package.json'), 'utf8'));
-    console.log(`BIVE ${version}\n\nCommands: init, skills, check, inspect, verify, view, snapshot, diff, build\n\nOptions: --root PATH, --json (check), --capability ID (verify), --port PORT (view),\n         --agent codex|claude|all (init/skills), --no-skills (init),\n         --out PATH (snapshot/build), --against PATH (diff)`);
+    console.log(`BIVE ${version}\n\nCommands: init, skills, check, context, inspect, verify, view, snapshot, diff, build\n\nOptions: --root PATH, --json (check), --capability ID (verify/context), --port PORT (view),\n         --operation ID|--rule ID|--schema NAME|--example ID|--check ID|--visual ID (context),\n         --section request,response,behaviour,errors,examples,checks,visuals,sources (context),\n         --max-chars N, --stats (context),\n         --agent codex|claude|all (init/skills), --no-skills (init),\n         --out PATH (snapshot/build), --against PATH (diff)`);
   }
   else throw new Error(`Unknown command: ${command}`);
 } catch (error) { console.error(`BIVE: ${error.message}`); process.exitCode = 1; }

@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { parse } from 'yaml';
 import Ajv from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
+import { visualsFile, targetError, safeDesignUrl, mediaMime } from './visuals.mjs';
 
 const methods = new Set(['get', 'post', 'put', 'patch', 'delete', 'options', 'head']);
 export const packageRoot = path.resolve(import.meta.dirname, '..');
@@ -113,8 +114,12 @@ export async function loadProject(root = process.cwd()) {
     if (!/^[a-z][a-z0-9-]*$/.test(cap.id) || ids.has(cap.id)) throw new Error(`Invalid or duplicate capability id: ${cap.id}`);
     ids.add(cap.id);
   }
+  let visuals=[];
+  try { visuals=parse(await readProject(root,visualsFile))?.visuals;if(!Array.isArray(visuals))throw new Error('visuals.yaml requires a visuals array'); }
+  catch(error){if(error.code!=='ENOENT')throw error;}
   return {
     root, name: config.name ?? path.basename(root),
+    visuals,
     system: config.system ? await readProject(root, config.system) : '',
     capabilities: await Promise.all(config.capabilities.map(c => loadCapability(root, c))),
   };
@@ -123,6 +128,18 @@ export async function loadProject(root = process.cwd()) {
 export async function validateProject(project) {
   const issues = [];
   const issue = (cap, level, message) => issues.push({ capability: cap.id, level, message });
+  const visualIds=new Set();
+  for(const visual of project.visuals??[]){
+    if(!visual||typeof visual!=='object'){issue({id:'visuals'},'error','Visual entry must be an object');continue;}
+    const cap={id:visual.target?.capability??'visuals'};
+    if(typeof visual.id!=='string'||!/^[A-Za-z0-9._-]+$/.test(visual.id)||visualIds.has(visual.id))issue(cap,'error','Invalid or duplicate visual id');
+    visualIds.add(visual.id);
+    const problem=targetError(project,visual.target);if(problem)issue(cap,'error',problem);
+    if(typeof visual.title!=='string'||!visual.title.trim()||visual.title.length>200)issue(cap,'error','Visual requires a title (up to 200 characters)');
+    if(Boolean(visual.file)===Boolean(visual.url))issue(cap,'error','Visual requires exactly one file or design URL');
+    if(visual.url&&!safeDesignUrl(visual.url))issue(cap,'error','Design link must use HTTPS');
+    if(visual.file){try{await projectPath(project.root,visual.file);const mime=mediaMime(visual.file);if(!mime)issue(cap,'error','Unsupported visual file');else if(visual.mime&&visual.mime!==mime)issue(cap,'error','Visual MIME disagrees with file extension');}catch(error){issue(cap,'error',error.message);}}
+  }
   for (const cap of project.capabilities) {
     const rules = new Set(), operations = new Set(), examples = new Set(), checkIds = new Set();
     for (const rule of cap.rules) {
