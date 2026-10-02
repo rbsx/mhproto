@@ -3,7 +3,7 @@ name: mhproto-discover
 description: Discover a capability in an existing app and produce source-backed MHProto behaviour, interface and example drafts. Use for adopting MHProto or inspecting a capability before specification work.
 ---
 
-# Bive Discover
+# MHProto Discover
 
 Start with `mhproto context` for the feature index, then `mhproto context --capability ID --operation ID` for the affected endpoint. Load only relevant `--rule`, `--schema`, `--example` or `--check` detail; `--section` narrows a packet. Read every deferred rule group the change touches before editing. Inspect the authoritative source when deciding intent or making a change. Do not load the exported HTML or whole `mhproto inspect` model into the prompt. Visual packets contain references; open images/design links only when needed.
 

@@ -3,7 +3,7 @@ name: mhproto-reconcile
 description: Find and reconcile disagreements between MHProto specs, interface schemas, examples and application implementation. Use for contract drift or capability upkeep.
 ---
 
-# Bive Reconcile
+# MHProto Reconcile
 
 Start with `mhproto context` for the feature index, then `mhproto context --capability ID --operation ID` for the affected endpoint. Load only relevant `--rule`, `--schema`, `--example` or `--check` detail; `--section` narrows a packet. Read every deferred rule group the change touches before editing. Inspect the authoritative source when deciding intent or making a change. Do not load the exported HTML or whole `mhproto inspect` model into the prompt. Visual packets contain references; open images/design links only when needed.
 

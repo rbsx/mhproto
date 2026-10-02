@@ -1,7 +1,7 @@
 {
   "name": "mhproto",
   "version": "0.7.0",
-  "description": "Machine\u2013Human Protocol: a shared contract workspace for humans and coding agents",
+  "description": "Machine–Human Protocol: a shared contract workspace for humans and coding agents",
   "type": "module",
   "bin": {
     "mhproto": "./bin/mhproto.mjs"
@@ -15,10 +15,17 @@
     "viewer",
     "skills",
     "doc",
-    "README.md"
+    "README.md",
+    "CONTRIBUTING.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
   ],
   "scripts": {
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "npm run format:check && npm test",
+    "prepack": "npm run check"
   },
   "engines": {
     "node": ">=22"
@@ -26,10 +33,20 @@
   "dependencies": {
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
-    "yaml": "^2.8.1"
+    "yaml": "^2.8.3"
   },
   "license": "MIT",
   "devDependencies": {
-    "jsdom": "^26.1.0"
-  }
+    "jsdom": "^26.1.0",
+    "prettier": "3.6.2"
+  },
+  "homepage": "https://mhproto.dev/",
+  "keywords": [
+    "specification",
+    "contracts",
+    "openapi",
+    "agents",
+    "spec-driven-development"
+  ],
+  "private": true
 }

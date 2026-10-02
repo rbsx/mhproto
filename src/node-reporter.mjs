@@ -2,8 +2,14 @@
 export default async function* reporter(events) {
   for await (const event of events) {
     if (['test:pass', 'test:fail'].includes(event.type)) {
-      const { name, skip, details } = event.data;
-      yield JSON.stringify({ type: event.type, name, skip: Boolean(skip), message: details?.error?.message ?? null }) + '\n';
+      const { name, skip, todo, details } = event.data;
+      yield JSON.stringify({
+        type: event.type,
+        name,
+        skip: Boolean(skip),
+        todo: Boolean(todo),
+        message: details?.error?.message ?? null,
+      }) + '\n';
     }
   }
 }

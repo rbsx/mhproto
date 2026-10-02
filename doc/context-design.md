@@ -28,13 +28,13 @@ Root structures preserve constraints, required fields, nullability and refs. Nes
 
 Measured against the same fresh Impostor daily project on 2026-10-02. Compact JSON, excluding its trailing newline. See context-measurements.json.
 
-| Read | Characters | Bytes |
-| --- | ---: | ---: |
-| Complete normalized project model | 129,642 | 129,766 |
-| Feature/operation index | 980 | 980 |
-| Tap endpoint packet | 8,501 | 8,505 |
-| Tap request/response only | 1,914 | 1,914 |
-| Ask endpoint packet | 9,279 | 9,281 |
+| Read                              | Characters |   Bytes |
+| --------------------------------- | ---------: | ------: |
+| Complete normalized project model |    129,642 | 129,766 |
+| Feature/operation index           |        980 |     980 |
+| Tap endpoint packet               |      8,501 |   8,505 |
+| Tap request/response only         |      1,914 |   1,914 |
+| Ask endpoint packet               |      9,279 |   9,281 |
 
 The tap packet is 93.44% smaller in characters than the complete model because it retrieves a different, relevant scope. This is not equivalent-content compression or a measured billing reduction. Model tokenization, follow-up reads, implementation files, retries and any opened images affect total consumption. Fetching every reference may approach or exceed a full read. Avoid summarizing away constraints just to improve this metric.
 

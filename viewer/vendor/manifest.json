@@ -1,0 +1,7 @@
+{
+  "claimedPackage": "mermaid",
+  "claimedVersion": "11.16.1",
+  "sha256": "008cd4dd55210b22a7e6a65107ff6c4115a29e5e6a3f2f97af9104ed75ba4c6a",
+  "upstreamVerified": false,
+  "provenance": "Reused local browser bundle; original upstream archive and build inputs are not recorded."
+}

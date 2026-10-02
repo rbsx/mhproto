@@ -4,7 +4,7 @@ Start with the feature the developer is working on, its app route, and the data 
 
 ## Structure
 
-- Sidebar: [b] logo, Project → Impostor, Features → Daily case (blue link). Sources stays in the sidebar footer.
+- Sidebar: [mh] logo linked to https://mhproto.dev/, Project → Impostor, Features → Daily case (blue link). Sources stays in the sidebar footer.
 - Search at the top of every page.
 - Feature overview: title, product/logic description, relative URL, API visible by default, play-state diagram, then Checks.
 - Endpoint page: back to the feature, method/path, purpose, copyable page link, inline request/response types, attached behaviour, useful diagrams, errors, examples and Checks.

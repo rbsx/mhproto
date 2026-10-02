@@ -6,43 +6,48 @@ The specification approach is BIVE: Behaviour · Interface · Verification · Ex
 
 A local, file-backed contract workspace for humans and coding agents. One npm package provides a parser, CLI, browser viewer and five installable agent skills. No hosted service or AI account is required.
 
-## Local pilot
+## Start locally
 
-From the sibling `imposter-mhproto-pilot` directory:
+This is a development preview, not an npm registry release. Node 22+ is required;
+local verification has been run on Node 24/macOS. Linux and Node 22 are covered
+by the configured CI matrix, which has not yet been run on a hosted repository.
+Windows is unverified.
+
+From a checkout of this repository:
 
 ```sh
-npx mhproto check
-npx mhproto verify --capability daily
-npx mhproto view --port 4317
+npm ci
+npm run check
 ```
 
-The pilot reuses Impostor’s daily-case Markdown and generated OpenAPI; its original authoritative docs remain authoritative. Tests run against an in-memory database and stub witnesses, with no model calls. Original application sources outside the pilot are not modified.
-
-## Another project
+In your application, install the checkout and create a draft contract:
 
 ```sh
-npm install --save-dev /absolute/path/to/mhproto
+npm install --save-dev /path/to/mhproto
 npx mhproto init --agent codex
 npx mhproto check
 npx mhproto snapshot
 npx mhproto view
 ```
 
-Replace the example with a real capability. `init` refuses to overwrite existing files. `skills --agent codex|claude|all` installs repository-local skills in `.agents/skills` or `.claude/skills`. It does not change global agent settings. The package is local and has not been published to npm.
+Replace the example with your feature. `init` refuses to overwrite existing
+contracts or skills. `skills --agent codex|claude|all` installs repository-local
+skills in `.agents/skills` or `.claude/skills`; global agent settings stay unchanged.
+The isolated Impostor pilot is a development fixture, not a package prerequisite.
 
 ## Commands
 
-| Command | Result |
-| --- | --- |
-| init | Scaffold a draft capability and install skills |
-| skills | Install the bundled agent skills separately |
-| check | Validate references, schemas, payload examples and check bindings |
-| context | Retrieve a compact index or scoped endpoint/rule/schema packet |
-| inspect | Emit the normalised project model as JSON |
-| verify | Run linked argv commands, store revision-bound evidence |
-| view | Serve a local viewer; save visual attachments and refresh source changes |
-| snapshot / diff | Save a baseline and inspect contract changes |
-| build | Export viewer assets, model.json and a self-contained viewer.html |
+| Command         | Result                                                                   |
+| --------------- | ------------------------------------------------------------------------ |
+| init            | Scaffold a draft capability and install skills                           |
+| skills          | Install the bundled agent skills separately                              |
+| check           | Validate references, schemas, payload examples and check bindings        |
+| context         | Retrieve a compact index or scoped endpoint/rule/schema packet           |
+| inspect         | Emit the normalised project model as JSON                                |
+| verify          | Run linked argv commands, store revision-bound evidence                  |
+| view            | Serve a local viewer; save visual attachments and refresh source changes |
+| snapshot / diff | Save a baseline and inspect contract changes                             |
+| build           | Export viewer assets, model.json and a self-contained viewer.html        |
 
 Use `--root PATH` for another app. See `mhproto help` for command options and `skills/mhproto-specify/references/format.md` for the data format.
 
@@ -60,9 +65,11 @@ Mermaid fences in the behaviour/system document and endpoint diagrams render as 
 
 `mhproto build --out ./mhproto-preview` creates a portable `viewer.html` that can be opened without a server. In the live viewer, attachments save to `mhproto/visuals.yaml` and `mhproto/assets`. In an exported snapshot, attachments stay in that preview; **Save preview** downloads a self-contained copy with them. Edit the source files to change normative contract text.
 
+Portable exports include check status, timing and observed test names, but omit captured stdout/stderr, failure messages, executed command records and the generated project-root path. Authored contracts, configured check commands/environment values, examples and attachments are retained. Review those files before sharing; export is not a secret scanner.
+
 ## Verification semantics
 
-Unchecked, passing, failing and stale are distinct. Node checks require exact expected test names and structured results; missing/skipped tests fail. Evidence includes commands, exit status, timings, observed tests and a SHA-256 digest of specs plus explicitly tracked sources. Failures are recorded. Checks execute sequentially, with a timeout.
+Unchecked, passing, failing and stale are distinct. Node checks require exact expected test names and structured results; missing/skipped/TODO tests fail. Evidence includes commands, exit status, timings, observed tests and a SHA-256 digest of the project configuration, system document, capability files, explicitly tracked sources and declared check files. Failures are recorded. Checks execute sequentially, with a timeout. They inherit the environment and execute the configured commands without a shell; they are not sandboxed. Run verification only for check commands you trust. Structured Node reporter output is bounded to 1 MB and fails closed if malformed or oversized.
 
 MHProto validates payload schemas and examples and its own cross-references; this is a bounded contract validator, not a complete OpenAPI standards validator. V0 supports OpenAPI 3.1 with local refs. Interfaces can originate in Zod, Protobuf tooling or handwritten OpenAPI, but only OpenAPI is consumed in this version. Optional type generation remains with the app’s chosen generator.
 
@@ -72,7 +79,7 @@ Browser editing of normative contract text, type generation, remote schema refs 
 
 ## Develop
 
-Node 22+. `npm install`, `npm test`, `npm pack`. The CLI and viewer run directly from source; no build step is needed. Dependencies: yaml, Ajv, ajv-formats. The viewer uses platform DOM APIs and escapes source content.
+Node 22+. `npm ci`, `npm run check`, `npm run format`. See CONTRIBUTING.md and doc/release-review.md. Package creation is held until the release gates pass. The CLI and viewer run directly from source; no build step is needed. Dependencies: yaml, Ajv, ajv-formats. The viewer uses platform DOM APIs and escapes source content.
 
 ## Visual references
 
@@ -92,7 +99,7 @@ mhproto context --capability daily --schema DailyPlayState
 
 Packets are assembled in code, not summarised by a model. Rule text and failure semantics remain exact. Nested types and grouped rules are explicit references, payload examples are fetched separately, and check summaries retain freshness. Image bytes, Mermaid's runtime, repeated OpenAPI examples and raw execution logs never enter these packets. The default 12,000-character budget fails visibly if exceeded; it never silently truncates rules. This reduces input context size; actual tokens and billed cost depend on the model and subsequent reads. See [context-design.md](doc/context-design.md) for research, limitations and measurements.
 
-## Linked type entities (0.5)
+## Linked type entities
 
 Signatures label declared component types by their existing OpenAPI names: `DailyTodayResponse { ... }`, `case: DailyCaseView {...} | null`, and `play: DailyPlayState {...} | null`. Type names link to `#/features/:feature/types/:type-id`. Fields remain inline and expandable. Following the type link opens its page; selecting the yellow placeholder expands the object.
 
@@ -102,7 +109,7 @@ Unnamed query/path/header/cookie structures, inline bodies/responses and nested 
 
 The index is built once per loaded model in the viewer and cached until that model changes. It is not serialized into the project model, snapshots or scoped agent packets, and does not duplicate the authoritative schemas. Type pages remain compatible with the standalone export.
 
-## Review an iteration (0.6)
+## Review an iteration
 
 Open **Changes** in the sidebar. Choose an earlier snapshot JSON or exported MHProto preview HTML, or **Use current spec as baseline** before editing. Changes lists added, changed and removed items by feature. Open an item for its changed fields with Before/Now values, then follow **Open current** to see it in context. Comparison links retain `?compare=1`; **Hide highlights** returns to normal reading. Changed type names and added/changed/removed fields are marked inline. Removed definitions remain reviewable on their change page.
 
@@ -117,3 +124,22 @@ mhproto diff --against .mhproto/iterations/before-history.json
 Without `--against`, the viewer uses `.mhproto/baseline.json`. The live **Use current spec as baseline** action replaces that local baseline with the current contract. When using `--against`, this action is disabled by the server so an explicit saved iteration is retained. **Download current snapshot** exports a named JSON baseline. In a standalone preview, save the amended preview to retain its selected/new baseline. Imported files stay in the viewer; importing an HTML preview reads its model without executing its scripts. Shared URLs require the same current spec and baseline to produce the same comparison; the exported HTML carries both.
 
 The comparison is one pure module shared by CLI, server and browser. It covers feature/system text, API operations and global settings, named schemas, attached behaviour/presentation, examples, check definitions and visual metadata. Object key order and unordered sets (required fields, enums and rule references) do not count as changes. Runtime paths, digests, evidence timestamps, test output and renderer code are excluded. Snapshot data is detached from current data and carries no execution logs. This is a spec delta, not an automatic breaking-change assessment or a code diff. Visual asset bytes are not compared when their metadata/path stays unchanged. Agent context packets remain unchanged.
+
+## Release status and boundaries
+
+This preview is held with `private: true`. Public release still requires a live
+dependency audit, upstream provenance and license checks for the reused Mermaid
+bundle, a clean tarball installation, hosted CI and painted browser QA. The
+existing downloadable 0.7.0 prototype predates this review and is not a reviewed
+release.
+
+The validator is intentionally bounded: JSON Schema 2020-12 payloads, local JSON
+pointer references and linked metadata. It does not implement the whole OpenAPI
+standard. The viewer primarily renders application/json structures. Agent context
+is scoped retrieval, not equivalent-content compression or guaranteed token savings.
+Visual metadata writes are serialized within one process; concurrent writers
+from separate viewer processes are not coordinated. Revision-bound evidence
+tracks files, not every external service or environmental change.
+
+MHProto source is MIT-licensed. See LICENSE and THIRD_PARTY_NOTICES.md for the
+separately licensed viewer dependency.
