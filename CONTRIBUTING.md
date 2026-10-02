@@ -12,6 +12,21 @@ clean them up. They cover actual CLI calls, structured Node test events, path
 containment, schema validation, offline exports, type navigation and comparison.
 JSDOM tests do not establish painted browser layout.
 
+For real HTTP and desktop/mobile Chromium flows, install the pinned browser and run:
+
+```sh
+npx playwright install --with-deps chromium
+npm run test:browser
+```
+
+The browser suite starts a loopback viewer, exercises navigation, linked types,
+attachment ownership and persistence, iteration diffs and offline save/reload.
+It writes screenshots and console diagnostics to `test-results/browser/`. Review
+the screenshots for layout; automated assertions do not replace visual judgment.
+GitHub CI uploads these artifacts along with dependency-audit and registry-signature
+reports. The copied Mermaid bundle still requires a verified reproducible build
+and licence inventory; npm signatures do not authenticate that local bundle.
+
 Keep changes scoped. Add regression tests for observable bugs. Preserve the
 single-owner attachment policy and the distinction between failed, stale and
 unchecked evidence. Agent context must retain exact rules and explicit deferred

@@ -1,4 +1,5 @@
 node_modules/
 *.tgz
 coverage/
+test-results/
 .DS_Store

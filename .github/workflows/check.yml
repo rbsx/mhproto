@@ -21,3 +21,47 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm pack --dry-run --json --ignore-scripts
+  dependencies:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: npm ci --ignore-scripts
+      - name: Audit vulnerabilities
+        run: npm audit --json > audit.json
+      - name: Verify registry signatures and available provenance
+        if: ${{ !cancelled() }}
+        run: npm audit signatures --json > signatures.json
+      - uses: actions/upload-artifact@v5
+        if: ${{ !cancelled() }}
+        with:
+          name: dependency-review
+          path: |
+            audit.json
+            signatures.json
+          retention-days: 14
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser
+      - uses: actions/upload-artifact@v5
+        if: ${{ !cancelled() }}
+        with:
+          name: browser-review
+          path: test-results/browser/
+          if-no-files-found: warn
+          retention-days: 14

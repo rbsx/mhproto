@@ -25,7 +25,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "npm run format:check && npm test",
-    "prepack": "npm run check"
+    "prepack": "npm run check",
+    "test:browser": "node --test test/browser.mjs"
   },
   "engines": {
     "node": ">=22"
@@ -38,6 +39,7 @@
   "license": "MIT",
   "devDependencies": {
     "jsdom": "^26.1.0",
+    "playwright": "1.63.0",
     "prettier": "3.6.2"
   },
   "homepage": "https://mhproto.dev/",
@@ -48,5 +50,12 @@
     "agents",
     "spec-driven-development"
   ],
-  "private": true
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rbsx/mhproto.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rbsx/mhproto/issues"
+  }
 }

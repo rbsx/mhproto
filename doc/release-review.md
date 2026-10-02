@@ -39,7 +39,7 @@ The YAML minimum follows the [maintainer's security advisory](https://github.com
 - The isolated source checkout also passes formatting and all 58 tests.
 - Planned package-layout smoke verifies the public import, executable CLI, scaffold, five skill installs, validation, scoped context, snapshot/diff and portable viewer export from staged npm-listed files. It uses an isolated dependency install; it is not an installation from an npm tarball.
 - `npm pack --dry-run --json --ignore-scripts` inspects the planned files without creating an archive. No application copy, local evidence, screenshots, test fixtures, node_modules or credentials are included. CLI executable mode, skills, viewer assets and licenses are included.
-- The planned package contains 32 files, approximately 1.05 MB packed and 3.80 MB unpacked. The reused Mermaid bundle accounts for 94% of the unpacked bytes; a reproducible renderer build is the main dependency/size decision.
+- The planned package now contains 33 files including the separate guide, approximately 1.05 MB packed and 3.80 MB unpacked. The reused Mermaid bundle accounts for about 94% of the unpacked bytes; a reproducible renderer build is the main dependency/size decision.
 - Standalone exports execute their shared comparison in JSDOM with network access disabled; Mermaid examples render with the actual local bundle. These checks do not establish painted layout, keyboard behaviour in a real browser or real HTTP transport. Local socket/browser preview was unavailable in this environment.
 - The final exported Impostor preview passes an offline DOM smoke with six endpoints, a linked type page, rendered Mermaid SVG and 23 fresh passing evidence summaries. It performs no fetch; SVG text measurement is approximate.
 
@@ -62,3 +62,27 @@ The viewer remains a large DOM module. Before adding another major flow, separat
 The contract validator implements a documented subset of OpenAPI 3.1 and JSON Schema 2020-12 with local references. Viewer signatures primarily handle application/json. Check success is evidence, not proof; trusted commands can forge their own output. Evidence tracks files, not tool upgrades or external environment/service state. Separate viewer processes do not coordinate attachment writes. Diff is a contract delta, not breaking-change classification; unchanged visual metadata does not detect changed asset bytes. Scoped context reduces supplied material but does not guarantee billed token savings.
 
 Treat these as documented preview boundaries. Do not hide them behind an expansive “fully validated” claim.
+
+## Release-check preparation after the documentation move
+
+The concise README and separate guide are preserved. Repository/issue metadata now
+points to rbsx/mhproto. CI has additional dependency advisory/signature checks and a
+desktop/mobile Chromium flow suite using pinned Playwright 1.63.0. Browser artifacts
+include screenshots and console diagnostics; tests cover actual HTTP, navigation,
+type expansion/backlinks, attachment ownership/persistence, diff details and offline
+preview save/reload without external requests. These tests use a synthetic contract,
+not production data or live model calls.
+
+The preparation has not cleared those gates. GitHub/npm DNS is unavailable in this
+execution environment, so the new jobs cannot be pushed or inspected here, and the
+real-browser suite cannot run under the local socket/browser restrictions. The
+existing 58-test suite still passes. Browser syntax, fixture contract validity and
+the new locked dependency install are checked separately; none is reported as a
+successful real-browser run. Mermaid provenance/licences and actual tarball
+installation remain open. No package was created or published.
+
+The updated 49-dependency lock installs successfully from the offline cache into
+an isolated checkout, and that checkout passes formatting and all 58 tests. The
+browser fixture validates with no contract errors and produces the intended
+linked-type diff. Planned npm contents exclude the browser fixture, browser suite
+and screenshots. Offline installation does not clear the live audit/signature gate.
