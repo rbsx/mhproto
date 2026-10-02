@@ -48,7 +48,7 @@ Use `--root PATH` for another app. See `bive help` for command options and `skil
 
 The sidebar lists the project and its features. A feature opens one page: title, product/logic description, relative app URL, visible API request/response signatures, play-state diagrams and a Checks section. Search stays at the top; Sources is a secondary link in the sidebar.
 
-Each endpoint opens its own page with a stable `#/features/:feature/api/:operation` URL. Behaviour, errors, examples and checks are attached to that endpoint. Nested objects expand inside their signatures; there is no shared-type browser or modal navigation. The Copy page link action preserves direct navigation to the endpoint.
+Each endpoint opens its own page with a stable `#/features/:feature/api/:operation` URL. Behaviour, errors, examples and checks are attached to that endpoint. Named types are clickable inside their signatures. Each type opens a shareable definition page with links to feature overviews, every endpoint using it and referencing type pages. Nested objects still expand in place; there is no separate type catalogue or modal navigation. The Copy page link action preserves direct navigation to the endpoint.
 
 The visual system uses white backgrounds, near-black text, neutral dividers and blue/purple links. HTTP method badges retain restrained colour coding. See `doc/viewer-design.md` for the flows and acceptance criteria.
 
@@ -85,7 +85,17 @@ bive context
 bive context --capability daily --operation tap --stats
 bive context --capability daily --operation tap --section request,response
 bive context --capability daily --rule DAILY-PLAY-4
-bive context --capability daily --schema DailyPlayView
+bive context --capability daily --schema DailyPlayState
 ```
 
 Packets are assembled in code, not summarised by a model. Rule text and failure semantics remain exact. Nested types and grouped rules are explicit references, payload examples are fetched separately, and check summaries retain freshness. Image bytes, Mermaid's runtime, repeated OpenAPI examples and raw execution logs never enter these packets. The default 12,000-character budget fails visibly if exceeded; it never silently truncates rules. This reduces input context size; actual tokens and billed cost depend on the model and subsequent reads. See [context-design.md](doc/context-design.md) for research, limitations and measurements.
+
+## Linked type entities (0.5)
+
+Signatures label declared component types by their existing OpenAPI names: `DailyTodayResponse { ... }`, `case: DailyCaseView {...} | null`, and `play: DailyPlayState {...} | null`. Type names link to `#/features/:feature/types/:type-id`. Fields remain inline and expandable. Following the type link opens its page; selecting the yellow placeholder expands the object.
+
+The type page shows the definition and a Used in section containing feature overview and endpoint links. Backlinks include nested/transitive uses, all declared response statuses, and direct references from other type pages. A type name can also be found through project search. Nothing is added to the sidebar or to object attachment controls.
+
+Unnamed query/path/header/cookie structures, inline bodies/responses and nested object items receive deterministic viewer labels, such as `GetTodayQuery` and `DailyRoundAnswersItem`. These pages explain where the structure comes from; labels do not create new application types or change the contract. Declared names take priority, and generated name collisions remain separate. Types shared through the same interface file link across features; equally named types from different interfaces stay distinct. Cycles are bounded.
+
+The index is built once per loaded model in the viewer and cached until that model changes. It is not serialized into the project model, snapshots or scoped agent packets, and does not duplicate the authoritative schemas. Type pages remain compatible with the standalone export.

@@ -10,6 +10,8 @@ let project, signature, query = '', generation = 0, diagramSerial = 0, diagramQu
 const featureUrl = cap => '#/features/'+encodeURIComponent(cap.id);
 const endpointUrl = (cap, op, rule) => featureUrl(cap)+'/api/'+encodeURIComponent(op.operationId)+(rule?'?rule='+encodeURIComponent(rule):'');
 const checkUrl = (cap, check) => featureUrl(cap)+'/checks/'+encodeURIComponent(check.id);
+const typeUrl = (cap, entity) => featureUrl(cap)+'/types/'+encodeURIComponent(entity.id);
+const typeLink = (cap, entity) => `<a class="type-link" href="${escape(typeUrl(cap,entity))}">${escape(entity.name)}</a>`;
 const method = op => `<span class="method ${escape(op.method.toLowerCase())}">${escape(op.method)}</span>`;
 const clean = value => String(value ?? '').replace(/`|\*\*/g,'');
 const checkTitle = check => (check.title??check.id).replace(/^(?:[A-Z][A-Z0-9.-]+\s+)+/,'');
@@ -21,6 +23,79 @@ const attachmentPolicy = Object.freeze({
   request:'header',response:'header',
 });
 let attachmentOwners = new Set();
+let entityIndex, entityProject;
+const schemaName = schema => schema?.$ref?.match(/^#\/components\/schemas\/([^/]+)$/)?.[1]?.replaceAll('~1','/').replaceAll('~0','~');
+const pascal = value => (String(value).match(/[A-Za-z0-9]+/g)??['Type']).map(s=>s[0].toUpperCase()+s.slice(1)).join('');
+const pointer = value => String(value).replaceAll('~','~0').replaceAll('/','~1');
+const rootKey = (cap,op,part,status='') => JSON.stringify([cap.id,op.operationId,part,status]);
+function schemaChildren(s) {
+  const children=Object.entries(s?.properties??{}).map(([name,schema])=>({schema,path:'/properties/'+pointer(name),name:pascal(name),field:name}));
+  if(s?.items&&typeof s.items==='object')children.push({schema:s.items,path:'/items',name:'Item',field:'[]'});
+  if(s?.additionalProperties&&typeof s.additionalProperties==='object')children.push({schema:s.additionalProperties,path:'/additionalProperties',name:'Value',field:'[key]'});
+  for(const kind of ['anyOf','oneOf','allOf','prefixItems'])for(const [i,schema] of (s?.[kind]??[]).entries())children.push({schema,path:`/${kind}/${i}`,name:'Variant'+(i+1),field:''});
+  return children;
+}
+// This index is derived from the current model in memory. No schema copies enter agent packets.
+function buildEntityIndex(model) {
+  const index={caps:new Map(),nodes:new Map(),roots:new Map(),usage:new Map(),entities:[]};
+  const register=(cap,id,name,schema,source,derived=false)=>{
+    const types=index.caps.get(cap.id),nodes=index.nodes.get(cap.id);
+    if(types.has(id))return types.get(id);
+    if(derived){const taken=new Set([...types.values()].map(e=>e.name));let n=1,base=name;while(taken.has(name))name=base+'Inline'+(n++===1?'':n-1);}
+    const identity=(cap.files?.interface??cap.interface??cap.id)+'#'+id;
+    if(!index.usage.has(identity))index.usage.set(identity,new Map());
+    const entity={id,name,schema,source,derived,identity,capability:cap.id,references:new Map(),usages:index.usage.get(identity)};
+    types.set(id,entity);if(schema&&typeof schema==='object')nodes.set(schema,entity);index.entities.push(entity);return entity;
+  };
+  const entityAt=(cap,schema)=>{const name=schemaName(schema);return name?index.caps.get(cap.id).get(name):index.nodes.get(cap.id).get(schema);};
+  const discover=(cap,node,owner,path='',suffix='')=>{
+    if(!node||typeof node!=='object'||node.$ref)return;
+    let current=owner;
+    if(path&&(node.properties||node.type==='object'||node.type?.includes?.('object')))current=register(cap,'@'+owner.id+path,owner.name+suffix,node,{kind:'inline',parent:owner.name,path},true);
+    for(const child of schemaChildren(node))discover(cap,child.schema,current,current===owner?path+child.path:child.path,current===owner?suffix+child.name:child.name);
+  };
+  for(const cap of model.capabilities){
+    index.caps.set(cap.id,new Map());index.nodes.set(cap.id,new WeakMap());
+    for(const [name,schema] of Object.entries(cap.openapi.components?.schemas??{}))register(cap,name,name,schema,{kind:'schema',file:cap.files?.interface});
+  }
+  for(const cap of model.capabilities){
+    for(const entity of [...index.caps.get(cap.id).values()])discover(cap,entity.schema,entity);
+    for(const op of orderedOperations(cap)){
+      const addRoot=(part,schema,label,source,status='')=>{
+        if(!schema)return;
+        const entity=entityAt(cap,schema)??register(cap,'@operation/'+op.operationId+'/'+part+(status?'/'+status:''),pascal(op.operationId)+label,schema,{...source,operationId:op.operationId},true);
+        index.roots.set(rootKey(cap,op,part,status),{entity,cap,op,part,status});discover(cap,entity.schema,entity);
+      };
+      for(const location of ['path','query','header','cookie']){const params=(op.parameters??[]).filter(p=>p.in===location);if(params.length)addRoot(location,parameterSchema(params),pascal(location),{kind:'parameters',location});}
+      addRoot('body',op.requestBody?.content?.['application/json']?.schema,'Body',{kind:'body'});
+      for(const [status,r] of Object.entries(op.responses??{}))addRoot('response',r.content?.['application/json']?.schema,'Response'+pascal(status),{kind:'response',status},status);
+    }
+  }
+  for(const entity of index.entities){
+    const cap=model.capabilities.find(c=>c.id===entity.capability);
+    const visit=(schema,path='')=>{
+      const other=entityAt(cap,schema);
+      if(other&&other!==entity){
+        const ref=entity.references.get(other.identity)??{entity:other,fields:new Set()};ref.fields.add(path||'definition');entity.references.set(other.identity,ref);return;
+      }
+      if(schema?.$ref){const name=schemaName(schema);const ref=index.caps.get(cap.id).get(name);if(ref&&ref!==entity){entity.references.set(ref.identity,{entity:ref,fields:new Set([path||'definition'])});}return;}
+      for(const child of schemaChildren(schema))visit(child.schema,path+(child.field==='[]'||child.field==='[key]'?child.field:child.field?(path?'.':'')+child.field:''));
+    };
+    visit(entity.schema);
+  }
+  for(const root of index.roots.values()){
+    const role=root.part==='response'?'Response '+root.status:root.part==='body'?'JSON body':pascal(root.part),seen=new Set();
+    const visit=entity=>{
+      if(seen.has(entity.identity))return;seen.add(entity.identity);
+      const key=JSON.stringify([root.cap.id,root.op.operationId]);
+      const use=entity.usages.get(key)??{capability:root.cap.id,operationId:root.op.operationId,roles:new Set()};use.roles.add(role);entity.usages.set(key,use);
+      for(const ref of entity.references.values())visit(ref.entity);
+    };visit(root.entity);
+  }
+  return index;
+}
+function entityFor(cap,schema) { const name=schemaName(schema);return name?entityIndex.caps.get(cap.id)?.get(name):entityIndex.nodes.get(cap.id)?.get(schema); }
+function rootEntity(cap,op,part,status='') { return entityIndex.roots.get(rootKey(cap,op,part,status))?.entity; }
 function referencedSchemas(cap,schemas) {
   const names=new Set();
   const visit=node=>{
@@ -107,6 +182,23 @@ function typeLabel(cap,input,depth=0,seen=new Set()) {
   const types=Array.isArray(s.type)?s.type:[s.type??'unknown'];
   return types.map(t=>t==='integer'?'number':t).join(' | ');
 }
+function typeMarkup(cap,input,seen=new Set(),includeEntity=true) {
+  const entity=includeEntity?entityFor(cap,input):null,s=resolveSchema(cap,input),next=new Set(seen);
+  if(input?.$ref)next.add(input.$ref);
+  if(entity){
+    const link=typeLink(cap,entity);
+    if(input?.$ref&&seen.has(input.$ref))return link+' <span class="field-constraint">recursive</span>';
+    if(s.properties||s.type==='object')return link+' <span class="object-pill">{...}</span>';
+    if(s.type==='array')return link+` Array&lt;${typeMarkup(cap,s.items,next)}&gt;`;
+    const objects=nestedObjects(cap,input,seen);
+    return link+(objects.length?' <span class="object-pill">{...}</span>':'')+((s.anyOf??s.oneOf??[]).some(x=>x.type==='null')?' | null':'');
+  }
+  if(s.anyOf||s.oneOf)return (s.anyOf??s.oneOf).map(x=>typeMarkup(cap,x,next)).join(' | ');
+  if(s.allOf)return s.allOf.map(x=>typeMarkup(cap,x,next)).join(' & ');
+  if(s.type==='array')return `Array&lt;${typeMarkup(cap,s.items,next)}&gt;`;
+  if(s.properties||s.type==='object')return '<span class="object-pill">{...}</span>';
+  return escape(typeLabel(cap,s));
+}
 function constraint(input) {
   const parts=[];
   if(input.format)parts.push(input.format);
@@ -118,24 +210,27 @@ function constraint(input) {
   return parts.length?`<span class="field-constraint">${escape(parts.join(' · '))}</span>`:'';
 }
 function nestedObjects(cap,input,seen) {
-  const s=resolveSchema(cap,input);
-  if(s.properties)return [{schema:input,suffix:''}];
-  if(s.type==='array')return nestedObjects(cap,s.items,seen).map(item=>({...item,suffix:item.suffix+'[]'}));
-  return (s.anyOf??s.oneOf??s.allOf??[]).flatMap(item=>nestedObjects(cap,item,seen));
-}
-function objectSignature(cap,input,depth=0,seen=new Set()) {
-  if(input?.$ref&&seen.has(input.$ref))return '<span class="field-type">{ recursive object }</span>';
+  if(input?.$ref&&seen.has(input.$ref))return [];
   const next=new Set(seen);if(input?.$ref)next.add(input.$ref);
   const s=resolveSchema(cap,input);
-  if(!s.properties)return `<div class="signature">${escape(typeLabel(cap,input))}</div>`;
+  if(s.properties)return [{schema:input,suffix:''}];
+  if(s.type==='array')return nestedObjects(cap,s.items,next).map(item=>({...item,suffix:item.suffix+'[]'}));
+  return (s.anyOf??s.oneOf??s.allOf??[]).flatMap(item=>nestedObjects(cap,item,next));
+}
+function objectSignature(cap,input,depth=0,seen=new Set(),root=null) {
+  if(input?.$ref&&seen.has(input.$ref))return `<span class="field-type">${typeMarkup(cap,input,seen)}</span>`;
+  const next=new Set(seen);if(input?.$ref)next.add(input.$ref);
+  const s=resolveSchema(cap,input);
+  const entity=root??entityFor(cap,input),name=depth===0&&entity?typeLink(cap,entity)+' ':'';
+  if(!s.properties)return `<div class="signature">${name}${typeMarkup(cap,s,next,false)}</div>`;
   const fields=Object.entries(s.properties).map(([name,p])=>{
     const resolved=resolveSchema(cap,p), optional=(s.required??[]).includes(name)?'':'?';
-    const label=`<span class="field-name">${escape(name+optional)}:</span> <span class="field-type">${escape(typeLabel(cap,p)).replaceAll('{...}','<span class="object-pill">{...}</span>')}</span>${constraint(resolved)}`;
+    const label=`<span class="field-name">${escape(name+optional)}:</span> <span class="field-type">${typeMarkup(cap,p,next)}</span>${constraint(resolved)}`;
     const objects=nestedObjects(cap,p,next);
     if(objects.length&&depth<7&&!(p.$ref&&next.has(p.$ref)))return `<details class="inline-object"><summary>${label}</summary><div>${objects.map(obj=>objectSignature(cap,obj.schema,depth+1,next)).join('')}${resolved.description?`<p class="field-note">${escape(resolved.description)}</p>`:''}</div></details>`;
     return `<div class="field">${label};</div>`;
   }).join('');
-  return `<div class="signature">{<div class="signature-body">${fields}</div>}</div>`;
+  return `<div class="signature">${name}{<div class="signature-body">${fields}</div>}</div>`;
 }
 function parameterSchema(parameters) {
   return {type:'object',properties:Object.fromEntries(parameters.map(p=>[p.name,p.schema??{}])),required:parameters.filter(p=>p.required).map(p=>p.name)};
@@ -144,16 +239,16 @@ function requestSignature(cap,op) {
   const parts=[];
   for(const location of ['path','query','header','cookie']){
     const params=(op.parameters??[]).filter(p=>p.in===location);
-    if(params.length)parts.push(`<p class="request-part">${escape(location.charAt(0).toUpperCase()+location.slice(1))}</p>${objectSignature(cap,parameterSchema(params))}`);
+    if(params.length){const entity=rootEntity(cap,op,location);parts.push(`<p class="request-part">${escape(location.charAt(0).toUpperCase()+location.slice(1))}</p>${objectSignature(cap,entity.schema,0,new Set(),entity)}`);}
   }
   const body=op.requestBody?.content?.['application/json']?.schema;
-  if(body)parts.push(`<p class="request-part">JSON body${op.requestBody.required?'':' · optional'}</p>${objectSignature(cap,body)}`);
+  if(body)parts.push(`<p class="request-part">JSON body${op.requestBody.required?'':' · optional'}</p>${objectSignature(cap,body,0,new Set(),rootEntity(cap,op,'body'))}`);
   return parts.join('')||'<div class="signature">No parameters or body.</div>';
 }
 function successResponse(op) { return Object.entries(op.responses??{}).find(([status])=>/^2\d\d$/.test(status))??Object.entries(op.responses??{})[0]??['—',{}]; }
 function io(cap,op) {
   const [status,res]=successResponse(op);
-  return `<div class="io-grid"><section>${attachmentBlock(target(cap,'request',op.operationId),'Request',{tag:'h3',className:'io-heading',label:'Request'})}${requestSignature(cap,op)}</section><section>${attachmentBlock(target(cap,'response',op.operationId,{status}),`Response <strong>${escape(status)}</strong>`,{tag:'h3',className:'io-heading',label:'Response '+status})}${res.content?.['application/json']?.schema?objectSignature(cap,res.content['application/json'].schema):'<div class="signature">No response body.</div>'}</section></div>`;
+  return `<div class="io-grid"><section>${attachmentBlock(target(cap,'request',op.operationId),'Request',{tag:'h3',className:'io-heading',label:'Request'})}${requestSignature(cap,op)}</section><section>${attachmentBlock(target(cap,'response',op.operationId,{status}),`Response <strong>${escape(status)}</strong>`,{tag:'h3',className:'io-heading',label:'Response '+status})}${res.content?.['application/json']?.schema?objectSignature(cap,res.content['application/json'].schema,0,new Set(),rootEntity(cap,op,'response',status)):'<div class="signature">No response body.</div>'}</section></div>`;
 }
 
 function diagram(title,source) {
@@ -226,6 +321,17 @@ function checkPage(cap,check) {
   const observed=(r.tests??[]).filter(t=>expected.has(t.name)||t.type==='test:fail');
   return `<a class="back" href="${escape(featureUrl(cap))}">← ${escape(cap.title??cap.id)}</a><h1>${escape(checkTitle(check))}</h1>${attachmentBlock(target(cap,'check',check.id),escape(statusLabel(r.status)),{className:'section-note '+(r.status==='failing'?'failing':''),label:checkTitle(check)})}${r.status==='stale'?'<p class="description">The tracked sources changed. Run this check again to refresh its evidence.</p>':''}${r.error?`<p class="error">${escape(r.error)}</p>`:''}${r.missing?.length?`<p class="error">Expected tests did not run: ${escape(r.missing.join(', '))}</p>`:''}${r.stderr?disclosure('Error output',`<pre>${escape(r.stderr)}</pre>`,r.status==='failing'):''}${observed.length?disclosure('Observed tests',observed.map(t=>`<p class="section-note">${t.skip?'Skipped':t.type==='test:fail'?'Failed':'Passed'} · ${escape(t.name)}</p>`).join(''),r.status==='failing'):''}<h2>Behaviour checked</h2><ul class="check-list">${(check.rules??[]).map(id=>`<li>${ruleLink(cap,id,clean(cap.rules.find(x=>x.id===id)?.text.split('\n')[0]??id))}</li>`).join('')}</ul>${disclosure('Run details',raw({command:check.command,durationMs:r.durationMs,exitCode:r.exitCode}))}`;
 }
+function entityPage(cap,entity) {
+  const source=entity.source,op=cap.operations.find(o=>o.operationId===source.operationId);
+  const context=entity.derived?source.kind==='parameters'?`${pascal(source.location)} parameters for ${op.method} ${op.path}.`:source.kind==='body'?`JSON request body for ${op.method} ${op.path}.`:source.kind==='response'?`Response ${source.status} for ${op.method} ${op.path}.`:`Object inside ${source.parent}.`:entity.schema.description;
+  const groups=project.capabilities.flatMap(feature=>{
+    const uses=[...entity.usages.values()].filter(u=>u.capability===feature.id);
+    if(!uses.length)return [];
+    return `<section class="type-usage-group"><h3><a href="${escape(featureUrl(feature))}">${escape(feature.title??feature.id)} overview</a></h3><ul class="type-usage-list">${orderedOperations(feature).filter(o=>uses.some(u=>u.operationId===o.operationId)).map(o=>{const use=uses.find(u=>u.operationId===o.operationId);return `<li>${method(o)}<a href="${escape(endpointUrl(feature,o))}">${escape(o.path)}</a><span class="section-note">${escape([...use.roles].join(' · '))}</span></li>`;}).join('')}</ul></section>`;
+  }).join('');
+  const parents=entityIndex.entities.filter(e=>e.identity!==entity.identity&&e.references.has(entity.identity));
+  return `<a class="back" href="${escape(featureUrl(cap))}">← ${escape(cap.title??cap.id)}</a><header><h1>${escape(entity.name)}</h1>${context?`<p class="description">${escape(context)}</p>`:''}</header><div class="page-actions"><button class="text-button" data-copy-url>Copy page link</button></div>${objectSignature(cap,entity.schema,0,new Set(),entity)}${entity.derived?'':visualGallery(target(cap,'schema',entity.id))}<section><h2>Used in</h2>${groups||'<p class="section-note">No API endpoint currently uses this type.</p>'}</section>${parents.length?`<section><h2>Referenced by types</h2><ul class="type-parent-list">${parents.map(parent=>{const feature=project.capabilities.find(c=>c.id===parent.capability),fields=[...parent.references.get(entity.identity).fields];return `<li>${typeLink(feature,parent)}<span class="section-note">${escape(fields.join(', '))}${feature.id!==cap.id?' · '+escape(feature.title??feature.id):''}</span></li>`;}).join('')}</ul></section>`:''}<p class="type-source section-note">${entity.derived?'Name derived for this view from its existing structure.':'Defined in '+escape(cap.files.interface)+' · '+escape(entity.id)}</p>`;
+}
 function sourcesPage(cap) {
   return `<a class="back" href="${escape(featureUrl(cap))}">← ${escape(cap.title??cap.id)}</a><h1>Sources</h1><p class="description">The feature reads these existing contract files. Edit them in your editor or through your agent.</p><table class="table"><tbody>${Object.entries(cap.files).map(([kind,file])=>`<tr><td>${escape(kind)}</td><td class="source-path">${escape(file)}</td></tr>`).join('')}</tbody></table>${disclosure('Tracked implementation',raw(cap.sources))}${disclosure('Complete behaviour document',`<div class="rule-text">${prose(cap.prose)}</div>`+markdownDiagrams(cap.prose,'State diagram'))}${disclosure('System map',`<div class="rule-text">${prose(project.system)}</div>`+markdownDiagrams(project.system,'System diagram'))}${disclosure('Local commands','<pre>bive check\nbive verify --capability '+escape(cap.id)+'\nbive snapshot\nbive diff</pre>')}`;
 }
@@ -243,11 +349,13 @@ function searchResults() {
       const op=orderedOperations(cap).find(o=>(example.operations??[]).includes(o.operationId));
       if(op)found.push({url:endpointUrl(cap,op),title:example.title??example.id,note:op.method+' '+op.path+' · example'});
     }
+    for(const entity of entityIndex.caps.get(cap.id).values())if(matches([entity.name,entity.schema.description]))found.push({url:typeUrl(cap,entity),title:entity.name,note:'Type · '+(cap.title??cap.id)});
   }
   return `<h1>Search</h1>${found.length?found.map(f=>`<article class="search-result"><a href="${escape(f.url)}">${escape(f.title)}</a><p>${escape(f.note)}</p></article>`).join(''):'<p class="empty">No matches.</p>'}`;
 }
 function render() {
   attachmentOwners=new Set();
+  if(entityProject!==project){entityIndex=buildEntityIndex(project);entityProject=project;}
   const version=++generation, state=route(),cap=state.cap;
   $('#project-name').textContent=project.name;
   $('#home').href=featureUrl(project.capabilities[0]);
@@ -257,6 +365,7 @@ function render() {
   if(query)body=searchResults();
   else if(state.kind==='api'){const op=cap.operations.find(o=>o.operationId===state.id);body=op?endpointPage(cap,op):`<a class="back" href="${escape(featureUrl(cap))}">← ${escape(cap.title)}</a><h1>Endpoint not found</h1>`;}
   else if(state.kind==='checks'){const check=cap.checks.find(c=>c.id===state.id);body=check?checkPage(cap,check):'<h1>Check not found</h1>';}
+  else if(state.kind==='types'){const entity=entityIndex.caps.get(cap.id).get(state.id);body=entity?entityPage(cap,entity):`<a class="back" href="${escape(featureUrl(cap))}">← ${escape(cap.title??cap.id)}</a><h1>Type not found</h1>`;}
   else if(state.kind==='sources')body=sourcesPage(cap);
   else body=overview(cap);
   $('#content').innerHTML=body;
@@ -265,7 +374,7 @@ function render() {
   $('#view-mode').textContent=embedded?'Exported snapshot':'Local workspace';
   $('#read-mode').textContent=previewChanged?'Added to this preview · save to keep':embedded?'Snapshot · visuals can be attached':'Visuals save to the workspace';
   $('#save-preview').hidden=!previewChanged;
-  document.title=(state.kind==='api'?cap.operations.find(o=>o.operationId===state.id)?.path:cap.title??cap.id)+' · BIVE';
+  document.title=(state.kind==='api'?cap.operations.find(o=>o.operationId===state.id)?.path:state.kind==='types'?entityIndex.caps.get(cap.id).get(state.id)?.name??'Type not found':cap.title??cap.id)+' · BIVE';
   if(state.rule&&!query){const target=document.getElementById(state.rule);for(let parent=target?.parentElement;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;target?.scrollIntoView?.({block:'start'});}
   diagramQueue=diagramQueue.catch(()=>{}).then(()=>renderDiagrams(version));
   globalThis.biveReady=diagramQueue;

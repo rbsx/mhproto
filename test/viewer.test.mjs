@@ -93,8 +93,97 @@ test('request constraints and nullable nested response objects stay inline in th
   owner.open=true;
   assert.ok(owner.textContent.includes('id: string'));
   assert.ok(owner.textContent.includes('name?: string'));
-  assert.equal(io.querySelectorAll('a').length,0);
+  assert.ok(io.querySelector('a.type-link[href$="/types/Status"]'));
+  assert.ok(owner.querySelector('a.type-link[href$="/types/User"]'));
   dom.window.close();
+});
+
+test('named types link from inline signatures to a shareable definition and every endpoint using them',async()=>{
+  const {dom,doc,window,click}=await fixture({hash:'#/features/example/api/setStatus'});
+  const owner=[...doc.querySelectorAll('.inline-object')].find(d=>d.querySelector('summary').textContent.startsWith('owner:'));
+  assert.equal(owner.querySelector('a.type-link').textContent,'User');assert.ok(!owner.open);
+  await click('.inline-object > summary a[href$="/types/User"]');
+  assert.ok(!owner.open,'Following a type link does not expand the object');
+  assert.equal(window.location.hash,'#/features/example/types/User');assert.equal(doc.querySelector('h1').textContent,'User');
+  assert.ok(doc.querySelector('.signature').textContent.includes('name?: string'));
+  assert.equal(doc.querySelectorAll('.type-usage-list a').length,2);
+  assert.ok(doc.querySelector('.type-usage-list a[href$="/api/getStatus"]'));
+  assert.ok(doc.querySelector('.type-usage-list a[href$="/api/setStatus"]'));
+  assert.ok(doc.querySelector('.type-parent-list a[href$="/types/Status"]'));
+  assert.equal(doc.querySelectorAll('[data-add-visual],dialog').length,0);
+  const direct=await fixture({hash:window.location.hash});assert.equal(direct.doc.querySelector('h1').textContent,'User');
+  await click('.type-parent-list a[href$="/types/Status"]');assert.equal(doc.querySelector('h1').textContent,'Status');
+  await click('.type-usage-list a[href$="/api/setStatus"]');assert.ok(doc.querySelector('h1').textContent.includes('/status/{id}'));
+  dom.window.close();direct.dom.window.close();
+});
+
+test('unnamed query and body structures receive linked labels without conflating them with declared types',async()=>{
+  const change=p=>{
+    const cap=p.capabilities[0];
+    cap.operations[0].parameters=[{in:'query',name:'date',required:true,schema:{type:'string'}},{in:'query',name:'deviceId',required:false,schema:{type:'string'}}];
+    cap.openapi.components.schemas.GetStatusQuery={type:'object',properties:{unrelated:{type:'boolean'}}};
+  };
+  const {dom,doc,window,click}=await fixture({change});
+  const query=doc.querySelector('.endpoint[data-operation="getStatus"] .io-grid a.type-link');
+  assert.equal(query.textContent,'GetStatusQueryInline');assert.ok(query.hash.includes('%40operation%2FgetStatus%2Fquery'));
+  const directHash=query.hash;await click('.endpoint[data-operation="getStatus"] .io-grid a.type-link');
+  assert.equal(doc.querySelector('h1').textContent,'GetStatusQueryInline');assert.ok(doc.querySelector('.signature').textContent.includes('deviceId?: string'));
+  assert.ok(doc.querySelector('.type-source').textContent.includes('Name derived'));
+  const direct=await fixture({hash:directHash,change});assert.equal(direct.doc.querySelector('h1').textContent,'GetStatusQueryInline');
+  await click('.type-usage-list a');assert.equal(window.location.hash,'#/features/example/api/getStatus');
+  dom.window.close();direct.dom.window.close();
+});
+
+test('array item entities and enum types have definitions and nested usage backlinks',async()=>{
+  const {dom,doc,click}=await fixture({hash:'#/features/example/api/setStatus',change:p=>{
+    const cap=p.capabilities[0];
+    cap.openapi.components.schemas.Phase={type:'string',enum:['ready','busy']};
+    cap.openapi.components.schemas.Status.properties.phase={$ref:'#/components/schemas/Phase'};
+    cap.openapi.components.schemas.Status.properties.history={type:'array',items:{type:'object',required:['at'],properties:{at:{type:'string',format:'date-time'}}}};
+  }});
+  const history=[...doc.querySelectorAll('.inline-object')].find(d=>d.querySelector('summary').textContent.startsWith('history'));
+  assert.ok(history.querySelector('summary').textContent.includes('Array<StatusHistoryItem {...}>'));
+  await click('.inline-object>summary a[href*="%40Status%2Fproperties%2Fhistory%2Fitems"]');
+  assert.equal(doc.querySelector('h1').textContent,'StatusHistoryItem');assert.ok(doc.querySelector('.signature').textContent.includes('date-time'));
+  assert.equal(doc.querySelectorAll('.type-usage-list a').length,2);
+  assert.ok(doc.querySelector('.type-parent-list').textContent.includes('history[]'));
+  await click('.type-parent-list a[href$="/types/Status"]');await click('.signature a[href$="/types/Phase"]');
+  assert.equal(doc.querySelector('h1').textContent,'Phase');assert.ok(doc.querySelector('.signature').textContent.includes('"ready" | "busy"'));
+  assert.equal(doc.querySelectorAll('.type-usage-list a').length,2);dom.window.close();
+});
+
+test('recursive type references terminate while keeping definitions and endpoint backlinks reachable',async()=>{
+  const {dom,doc,click}=await fixture({hash:'#/features/example/api/setStatus',change:p=>{
+    const cap=p.capabilities[0];cap.openapi.components.schemas.Node={type:'object',properties:{value:{type:'string'},next:{anyOf:[{$ref:'#/components/schemas/Node'},{type:'null'}]},children:{type:'array',items:{$ref:'#/components/schemas/Node'}}}};
+    cap.operations[1].responses['201'].content['application/json'].schema={$ref:'#/components/schemas/Node'};
+  }});
+  assert.ok(doc.querySelector('.io-grid').textContent.includes('recursive'));
+  await click('.io-grid a[href$="/types/Node"]');assert.equal(doc.querySelector('h1').textContent,'Node');
+  assert.ok(doc.querySelector('.signature').textContent.includes('value?: string'));
+  assert.equal(doc.querySelectorAll('.type-usage-list a').length,1);assert.ok(doc.querySelector('.type-usage-list a[href$="/api/setStatus"]'));
+  assert.ok(doc.querySelectorAll('.signature .inline-object').length<5);dom.window.close();
+});
+
+test('shared interface types link across features while equally named types in another interface stay separate',async()=>{
+  const {dom,doc}=await fixture({hash:'#/features/example/types/User',change:p=>{
+    const same=structuredClone(p.capabilities[0]);same.id='second';same.title='Second screen';
+    const other=structuredClone(p.capabilities[0]);other.id='unrelated';other.title='Another API';other.files.interface='another.openapi.json';
+    p.capabilities.push(same,other);
+  }});
+  assert.equal(doc.querySelectorAll('.type-usage-group').length,2);
+  assert.equal(doc.querySelectorAll('.type-usage-list a').length,4);
+  assert.ok(doc.querySelector('.type-usage-group a[href="#/features/second"]'));
+  assert.ok(!doc.querySelector('.type-usage-group a[href*="unrelated"]'));
+  assert.ok(doc.querySelector('.type-parent-list a[href="#/features/second/types/Status"]'));
+  dom.window.close();
+});
+
+test('type search opens a definition and a missing type keeps a way back to the feature',async()=>{
+  const {dom,doc,window,click}=await fixture();
+  const search=doc.querySelector('#search');search.value='User';search.dispatchEvent(new window.Event('input'));
+  await click('.search-result a[href$="/types/User"]');assert.equal(doc.querySelector('h1').textContent,'User');
+  const missing=await fixture({hash:'#/features/example/types/missing'});assert.equal(missing.doc.querySelector('h1').textContent,'Type not found');assert.equal(missing.doc.querySelector('.back').hash,'#/features/example');
+  dom.window.close();missing.dom.window.close();
 });
 
 test('visuals stay beside their target, and static attachments survive Save preview with bytes outside the model',async()=>{
