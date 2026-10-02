@@ -99,3 +99,19 @@ The type page shows the definition and a Used in section containing feature over
 Unnamed query/path/header/cookie structures, inline bodies/responses and nested object items receive deterministic viewer labels, such as `GetTodayQuery` and `DailyRoundAnswersItem`. These pages explain where the structure comes from; labels do not create new application types or change the contract. Declared names take priority, and generated name collisions remain separate. Types shared through the same interface file link across features; equally named types from different interfaces stay distinct. Cycles are bounded.
 
 The index is built once per loaded model in the viewer and cached until that model changes. It is not serialized into the project model, snapshots or scoped agent packets, and does not duplicate the authoritative schemas. Type pages remain compatible with the standalone export.
+
+## Review an iteration (0.6)
+
+Open **Changes** in the sidebar. Choose an earlier snapshot JSON or exported BIVE preview HTML, or **Use current spec as baseline** before editing. Changes lists added, changed and removed items by feature. Open an item for its changed fields with Before/Now values, then follow **Open current** to see it in context. Comparison links retain `?compare=1`; **Hide highlights** returns to normal reading. Changed type names and added/changed/removed fields are marked inline. Removed definitions remain reviewable on their change page.
+
+```sh
+bive snapshot --label "Before case history" --out .bive/iterations/before-history.json
+# Edit the source contract, then:
+bive view --against .bive/iterations/before-history.json
+bive build --against .bive/iterations/before-history.json --out ./review
+bive diff --against .bive/iterations/before-history.json
+```
+
+Without `--against`, the viewer uses `.bive/baseline.json`. The live **Use current spec as baseline** action replaces that local baseline with the current contract. When using `--against`, this action is disabled by the server so an explicit saved iteration is retained. **Download current snapshot** exports a named JSON baseline. In a standalone preview, save the amended preview to retain its selected/new baseline. Imported files stay in the viewer; importing an HTML preview reads its model without executing its scripts. Shared URLs require the same current spec and baseline to produce the same comparison; the exported HTML carries both.
+
+The comparison is one pure module shared by CLI, server and browser. It covers feature/system text, API operations and global settings, named schemas, attached behaviour/presentation, examples, check definitions and visual metadata. Object key order and unordered sets (required fields, enums and rule references) do not count as changes. Runtime paths, digests, evidence timestamps, test output and renderer code are excluded. Snapshot data is detached from current data and carries no execution logs. This is a spec delta, not an automatic breaking-change assessment or a code diff. Visual asset bytes are not compared when their metadata/path stays unchanged. Agent context packets remain unchanged.

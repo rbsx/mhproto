@@ -1,3 +1,4 @@
+import { compareModels, contractSnapshot, snapshotProject, canonical } from './diff.js';
 const $ = selector => document.querySelector(selector);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 const prose = value => escape(value).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
@@ -11,7 +12,7 @@ const featureUrl = cap => '#/features/'+encodeURIComponent(cap.id);
 const endpointUrl = (cap, op, rule) => featureUrl(cap)+'/api/'+encodeURIComponent(op.operationId)+(rule?'?rule='+encodeURIComponent(rule):'');
 const checkUrl = (cap, check) => featureUrl(cap)+'/checks/'+encodeURIComponent(check.id);
 const typeUrl = (cap, entity) => featureUrl(cap)+'/types/'+encodeURIComponent(entity.id);
-const typeLink = (cap, entity) => `<a class="type-link" href="${escape(typeUrl(cap,entity))}">${escape(entity.name)}</a>`;
+const typeLink = (cap, entity) => {const status=entityChange(cap,entity);return `<a class="type-link${status?' change-link '+status:''}" href="${escape(typeUrl(cap,entity))}"${status?` title="${escape(pascal(status))} type"`:''}>${escape(entity.name)}</a>`;};
 const method = op => `<span class="method ${escape(op.method.toLowerCase())}">${escape(op.method)}</span>`;
 const clean = value => String(value ?? '').replace(/`|\*\*/g,'');
 const checkTitle = check => (check.title??check.id).replace(/^(?:[A-Z][A-Z0-9.-]+\s+)+/,'');
@@ -24,6 +25,23 @@ const attachmentPolicy = Object.freeze({
 });
 let attachmentOwners = new Set();
 let entityIndex, entityProject;
+let baseline=$('#bive-baseline')?JSON.parse($('#bive-baseline').textContent):null;
+let baselineProject,baselineEntities,indexedBaseline,comparisonChanges=[],comparisonMap=new Map(),comparisonEnabled=false,comparisonError='',localBaseline=false,baselineReadOnly=false,comparisonFilter='all';
+const changeKey = change => JSON.stringify([change.capability,change.kind,change.id]);
+const changeUrl = change => '#/changes/'+encodeURIComponent(changeKey(change));
+const changeFor = (cap,kind,id) => comparisonMap.get(JSON.stringify([cap?.id??null,kind,id]));
+const changeBadge = change => comparisonEnabled&&change?`<a class="change-badge ${escape(change.status)}" href="${escape(changeUrl(change))}">${escape(pascal(change.status))}</a>`:'';
+const baselineLabel = () => baseline?.label??'Saved baseline';
+function updateComparison() {
+  if(indexedBaseline!==baseline){baselineProject=baseline?snapshotProject(baseline):null;baselineEntities=baselineProject?buildEntityIndex(baselineProject):null;indexedBaseline=baseline;}
+  comparisonChanges=baseline?compareModels(baseline,project):[];
+  comparisonMap=new Map(comparisonChanges.map(c=>[changeKey(c),c]));
+}
+function entityChange(cap,entity) {
+  if(!comparisonEnabled||!baselineEntities)return null;
+  const old=baselineEntities.caps.get(cap.id)?.get(entity.id);
+  return !old?'added':JSON.stringify(canonical(old.schema))!==JSON.stringify(canonical(entity.schema))?'changed':null;
+}
 const schemaName = schema => schema?.$ref?.match(/^#\/components\/schemas\/([^/]+)$/)?.[1]?.replaceAll('~1','/').replaceAll('~0','~');
 const pascal = value => (String(value).match(/[A-Za-z0-9]+/g)??['Type']).map(s=>s[0].toUpperCase()+s.slice(1)).join('');
 const pointer = value => String(value).replaceAll('~','~0').replaceAll('/','~1');
@@ -144,7 +162,7 @@ function route() {
   // Older exported links still lead to the feature overview.
   const id = parts[0]==='features'?parts[1]:parts[0];
   const cap = project.capabilities.find(c=>c.id===id) ?? project.capabilities[0];
-  return { cap, kind:parts[0]==='features'?parts[2]:null, id:parts[3], rule:new URLSearchParams(params).get('rule') };
+  return { cap, kind:parts[0]==='changes'?'changes':parts[0]==='features'?parts[2]:null, id:parts[0]==='changes'?parts[1]:parts[3], rule:new URLSearchParams(params).get('rule'), compare:new URLSearchParams(params).get('compare')==='1' };
 }
 function orderedOperations(cap) {
   const order=cap.presentation?.operationOrder??[];
@@ -223,14 +241,20 @@ function objectSignature(cap,input,depth=0,seen=new Set(),root=null) {
   const s=resolveSchema(cap,input);
   const entity=root??entityFor(cap,input),name=depth===0&&entity?typeLink(cap,entity)+' ':'';
   if(!s.properties)return `<div class="signature">${name}${typeMarkup(cap,s,next,false)}</div>`;
+  const oldCap=baselineProject?.capabilities.find(c=>c.id===cap.id),oldEntity=entity&&baselineEntities?.caps.get(cap.id)?.get(entity.id);
+  const old=oldCap&&oldEntity?resolveSchema(oldCap,oldEntity.schema):null;
   const fields=Object.entries(s.properties).map(([name,p])=>{
     const resolved=resolveSchema(cap,p), optional=(s.required??[]).includes(name)?'':'?';
     const label=`<span class="field-name">${escape(name+optional)}:</span> <span class="field-type">${typeMarkup(cap,p,next)}</span>${constraint(resolved)}`;
+    const status=comparisonEnabled&&old?(old.properties?.[name]===undefined?'added':JSON.stringify(canonical({schema:old.properties[name],required:(old.required??[]).includes(name)}))!==JSON.stringify(canonical({schema:p,required:(s.required??[]).includes(name)}))?'changed':null):comparisonEnabled&&baseline&&entity&&!oldEntity?'added':null;
+    const attrs=status?` data-change="${status}" title="${pascal(status)} field"`:'';
+    const marker=status?`<span class="field-change">${pascal(status)}</span>`:'';
     const objects=nestedObjects(cap,p,next);
-    if(objects.length&&depth<7&&!(p.$ref&&next.has(p.$ref)))return `<details class="inline-object"><summary>${label}</summary><div>${objects.map(obj=>objectSignature(cap,obj.schema,depth+1,next)).join('')}${resolved.description?`<p class="field-note">${escape(resolved.description)}</p>`:''}</div></details>`;
-    return `<div class="field">${label};</div>`;
+    if(objects.length&&depth<7&&!(p.$ref&&next.has(p.$ref)))return `<details class="inline-object"${attrs}><summary>${label}${marker}</summary><div>${objects.map(obj=>objectSignature(cap,obj.schema,depth+1,next)).join('')}${resolved.description?`<p class="field-note">${escape(resolved.description)}</p>`:''}</div></details>`;
+    return `<div class="field"${attrs}>${label};${marker}</div>`;
   }).join('');
-  return `<div class="signature">${name}{<div class="signature-body">${fields}</div>}</div>`;
+  const removed=comparisonEnabled&&old?Object.entries(old.properties??{}).filter(([name])=>!Object.hasOwn(s.properties,name)).map(([name,p])=>`<div class="field" data-change="removed"><span class="field-name">${escape(name+((old.required??[]).includes(name)?'':'?'))}:</span> <span class="field-type">${escape(typeLabel(oldCap,p))}</span>;<span class="field-change">Removed</span></div>`).join(''):'';
+  return `<div class="signature">${name}{<div class="signature-body">${fields}${removed}</div>}</div>`;
 }
 function parameterSchema(parameters) {
   return {type:'object',properties:Object.fromEntries(parameters.map(p=>[p.name,p.schema??{}])),required:parameters.filter(p=>p.required).map(p=>p.name)};
@@ -335,6 +359,59 @@ function entityPage(cap,entity) {
 function sourcesPage(cap) {
   return `<a class="back" href="${escape(featureUrl(cap))}">← ${escape(cap.title??cap.id)}</a><h1>Sources</h1><p class="description">The feature reads these existing contract files. Edit them in your editor or through your agent.</p><table class="table"><tbody>${Object.entries(cap.files).map(([kind,file])=>`<tr><td>${escape(kind)}</td><td class="source-path">${escape(file)}</td></tr>`).join('')}</tbody></table>${disclosure('Tracked implementation',raw(cap.sources))}${disclosure('Complete behaviour document',`<div class="rule-text">${prose(cap.prose)}</div>`+markdownDiagrams(cap.prose,'State diagram'))}${disclosure('System map',`<div class="rule-text">${prose(project.system)}</div>`+markdownDiagrams(project.system,'System diagram'))}${disclosure('Local commands','<pre>bive check\nbive verify --capability '+escape(cap.id)+'\nbive snapshot\nbive diff</pre>')}`;
 }
+const kindLabel = kind => ({feature:'Feature',operation:'API',schema:'Type',rule:'Behaviour',example:'Example',check:'Check',visual:'Visual',system:'System'})[kind]??kind;
+function changeTitle(c) {
+  const value=c.after??c.before;
+  return c.kind==='operation'?value.method+' '+value.path:c.kind==='rule'?value.title===c.id?clean(value.text.split('\n')[0]):value.title:c.kind==='schema'?c.id:value.title??(c.kind==='system'?'System and project':c.id);
+}
+function currentChangeUrl(c) {
+  if(c.status==='removed')return null;
+  const cap=project.capabilities.find(x=>x.id===c.capability);if(!cap)return featureUrl(project.capabilities[0])+'/sources';
+  if(c.kind==='operation'){const op=cap.operations.find(o=>o.operationId===c.id);return op&&endpointUrl(cap,op);}
+  if(c.kind==='schema'){const entity=entityIndex.caps.get(cap.id).get(c.id);return entity&&typeUrl(cap,entity);}
+  if(c.kind==='check')return checkUrl(cap,{id:c.id});
+  if(c.kind==='rule'||c.kind==='example'){
+    const ids=c.kind==='example'?c.after.operations:undefined,op=orderedOperations(cap).find(o=>ids?ids.includes(o.operationId):operationRuleIds(cap,o).includes(c.id));
+    return op?endpointUrl(cap,op,c.kind==='rule'?c.id:undefined):featureUrl(cap)+'/sources';
+  }
+  if(c.kind==='visual'){
+    const t=c.after.target;if(['operation','request','response','field'].includes(t.kind)){const op=cap.operations.find(o=>o.operationId===t.id);if(op)return endpointUrl(cap,op);}
+    if(t.kind==='schema'){const entity=entityIndex.caps.get(cap.id).get(t.id);if(entity)return typeUrl(cap,entity);}
+    if(t.kind==='check')return checkUrl(cap,{id:t.id});
+  }
+  return featureUrl(cap);
+}
+const fieldPath = path => path.length?path.map(k=>k==='schema'?'Definition':k==='presentation'?'Page behaviour':k).join(' → '):'Definition';
+function comparisonSetup() {
+  return `<details class="disclosure baseline-picker"${!baseline?' open':''}><summary>${baseline?'Change baseline':'Choose where this iteration starts'}</summary><div><label class="baseline-file">Compare with an earlier snapshot or preview<input id="baseline-file" type="file" accept=".json,.html,application/json,text/html"></label><p class="section-note">The selected file stays in this viewer. It is never executed.</p><button class="text-button" data-start-iteration${baselineReadOnly?' disabled':''}>Use current spec as baseline</button><p class="section-note">${baselineReadOnly?'Viewing a saved iteration. Start the viewer without --against to save a new baseline.':embedded?'Save preview to keep this baseline with the exported file.':'Saves .bive/baseline.json for the local workspace.'}</p></div></details><p class="comparison-error error" role="status">${escape(comparisonError)}</p>`;
+}
+function changesPage(id) {
+  const changed=id?comparisonMap.get(id):null;
+  if(id&&!changed)return '<a class="back" href="#/changes">← Changes</a><h1>Change not found</h1><p class="description">This item is unchanged against the selected baseline. Open Changes to see the current comparison.</p>';
+  if(changed){
+    const url=currentChangeUrl(changed),format=(value,present)=>!present?'—':typeof value==='string'?value:JSON.stringify(value,null,2);
+    const rows=changed.fields.map(f=>`<tr><th scope="row">${escape(fieldPath(f.path))}<span class="field-change">${escape(pascal(f.status))}</span></th><td><pre>${escape(format(f.before,f.beforePresent))}</pre></td><td><pre>${escape(format(f.after,f.afterPresent))}</pre></td></tr>`).join('');
+    return `<a class="back" href="#/changes">← Changes</a><h1>${escape(changeTitle(changed))}</h1><p class="section-note">${escape(pascal(changed.status))} · ${escape(kindLabel(changed.kind))} · ${escape(baselineLabel())} → Current spec</p><div class="page-actions"><button class="text-button" data-copy-url>Copy page link</button>${url?`<a href="${escape(url)}">Open current ${escape(kindLabel(changed.kind).toLowerCase())}</a>`:'<span class="section-note">Removed from the current spec.</span>'}</div><div class="diff-table-wrap"><table class="table diff-table"><thead><tr><th>Field</th><th>Before</th><th>Now</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+  const counts=['added','changed','removed'].map(s=>comparisonChanges.filter(c=>c.status===s).length+' '+s).join(' · ');
+  const filtered=comparisonChanges.filter(c=>comparisonFilter==='all'||c.kind===comparisonFilter);
+  const groups=[...new Set(filtered.map(c=>c.capability))].map(id=>{
+    const cap=project.capabilities.find(c=>c.id===id)??baselineProject?.capabilities.find(c=>c.id===id);
+    return `<section class="changes-group"><h2>${escape(cap?.title??cap?.id??'Project')}</h2><ul class="changes-list">${filtered.filter(c=>c.capability===id).map(c=>`<li><span class="change-status ${escape(c.status)}">${escape(pascal(c.status))}</span><div><a href="${escape(changeUrl(c))}">${escape(changeTitle(c))}</a><span class="change-kind">${escape(kindLabel(c.kind))}</span><p class="section-note">${escape(c.status==='changed'?c.fields.slice(0,2).map(f=>fieldPath(f.path)).join(' · ')+(c.fields.length>2?' · '+(c.fields.length-2)+' more':''):c.status==='added'?'New in this iteration.':'Present in the baseline.')}</p></div></li>`).join('')}</ul></section>`;
+  }).join('');
+  return `<h1>Changes</h1><p class="description">${baseline?escape(baselineLabel())+' → Current spec':'Save the current spec before editing, or choose an earlier snapshot to compare.'}</p>${baseline?.createdAt?`<p class="section-note">Baseline saved ${escape(new Date(baseline.createdAt).toLocaleString())}</p>`:''}${baseline?`<p class="change-counts">${counts}</p><div class="page-actions"><button class="text-button" data-copy-url>Copy page link</button><button class="text-button" data-download-snapshot>Download current snapshot</button></div>`:''}${comparisonSetup()}${baseline&&comparisonChanges.length?`<label class="changes-filter">Show <select id="changes-filter">${['all','operation','schema','rule','feature','example','check','visual','system'].map(k=>`<option value="${k}"${comparisonFilter===k?' selected':''}>${k==='all'?'All changes':escape(kindLabel(k))}</option>`).join('')}</select></label>${groups||'<p class="empty">No changes in this category.</p>'}`:baseline?'<p class="empty">No spec changes since this baseline.</p>':''}`;
+}
+function comparisonBar() {
+  return comparisonEnabled&&baseline?`<div class="comparison-bar"><span>Comparing with ${escape(baselineLabel())}</span><a href="#/changes">${comparisonChanges.length} changes</a><button class="text-button" data-exit-comparison>Hide highlights</button></div>`:'';
+}
+function decorateComparison(state) {
+  if(!comparisonEnabled||!baseline||state.kind==='changes'||query)return;
+  const cap=state.cap,pageChange=state.kind==='api'?changeFor(cap,'operation',state.id):state.kind==='types'?changeFor(cap,'schema',state.id):state.kind==='checks'?changeFor(cap,'check',state.id):!state.kind?changeFor(cap,'feature',cap.id):null;
+  if(pageChange)$('#content h1')?.insertAdjacentHTML('beforeend',changeBadge(pageChange));
+  for(const article of document.querySelectorAll('.endpoint[data-operation]'))article.querySelector('.endpoint-heading')?.insertAdjacentHTML('beforeend',changeBadge(changeFor(cap,'operation',article.dataset.operation)));
+  for(const rule of cap.rules)document.getElementById(rule.id)?.querySelector('.rule-id')?.insertAdjacentHTML('afterend',changeBadge(changeFor(cap,'rule',rule.id)));
+  for(const link of document.querySelectorAll('.check-list>li>a')){const id=decodeURIComponent(link.hash.split('/checks/')[1]??'');if(id)link.insertAdjacentHTML('afterend',changeBadge(changeFor(cap,'check',id)));}
+}
 function searchResults() {
   const found=[], matches=value=>JSON.stringify(value).toLowerCase().includes(query.toLowerCase());
   for(const cap of project.capabilities){
@@ -357,24 +434,30 @@ function render() {
   attachmentOwners=new Set();
   if(entityProject!==project){entityIndex=buildEntityIndex(project);entityProject=project;}
   const version=++generation, state=route(),cap=state.cap;
+  comparisonEnabled=state.compare||state.kind==='changes';updateComparison();
   $('#project-name').textContent=project.name;
   $('#home').href=featureUrl(project.capabilities[0]);
   $('#features').innerHTML=project.capabilities.map(c=>`<a href="${escape(featureUrl(c))}" class="${c.id===cap.id?'active':''}"${c.id===cap.id?' aria-current="page"':''}>${escape(c.title??c.id)}</a>`).join('');
   $('#sources-link').href=featureUrl(cap)+'/sources';
+  $('#changes-link').textContent='Changes'+(baseline?' · '+comparisonChanges.length:'');
   let body;
   if(query)body=searchResults();
+  else if(state.kind==='changes')body=changesPage(state.id);
   else if(state.kind==='api'){const op=cap.operations.find(o=>o.operationId===state.id);body=op?endpointPage(cap,op):`<a class="back" href="${escape(featureUrl(cap))}">← ${escape(cap.title)}</a><h1>Endpoint not found</h1>`;}
   else if(state.kind==='checks'){const check=cap.checks.find(c=>c.id===state.id);body=check?checkPage(cap,check):'<h1>Check not found</h1>';}
   else if(state.kind==='types'){const entity=entityIndex.caps.get(cap.id).get(state.id);body=entity?entityPage(cap,entity):`<a class="back" href="${escape(featureUrl(cap))}">← ${escape(cap.title??cap.id)}</a><h1>Type not found</h1>`;}
   else if(state.kind==='sources')body=sourcesPage(cap);
   else body=overview(cap);
-  $('#content').innerHTML=body;
+  $('#content').innerHTML=(state.kind==='changes'?'':comparisonBar())+body;decorateComparison(state);
+  if(comparisonEnabled&&baseline)for(const a of document.querySelectorAll('a[href^="#/features/"]')){
+    const [pathname,params]=a.getAttribute('href').split('?'),search=new URLSearchParams(params);search.set('compare','1');a.setAttribute('href',pathname+'?'+search);
+  }
   const stale=cap.evidence?.stale||cap.evidence?.changedDuringRun;
   $('#freshness').textContent=stale?'Evidence needs a new run':cap.evidence?'Latest run · '+new Date(cap.evidence.finishedAt).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):'No verification run recorded';
   $('#view-mode').textContent=embedded?'Exported snapshot':'Local workspace';
   $('#read-mode').textContent=previewChanged?'Added to this preview · save to keep':embedded?'Snapshot · visuals can be attached':'Visuals save to the workspace';
   $('#save-preview').hidden=!previewChanged;
-  document.title=(state.kind==='api'?cap.operations.find(o=>o.operationId===state.id)?.path:state.kind==='types'?entityIndex.caps.get(cap.id).get(state.id)?.name??'Type not found':cap.title??cap.id)+' · BIVE';
+  document.title=(state.kind==='changes'?'Changes':state.kind==='api'?cap.operations.find(o=>o.operationId===state.id)?.path:state.kind==='types'?entityIndex.caps.get(cap.id).get(state.id)?.name??'Type not found':cap.title??cap.id)+' · BIVE';
   if(state.rule&&!query){const target=document.getElementById(state.rule);for(let parent=target?.parentElement;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;target?.scrollIntoView?.({block:'start'});}
   diagramQueue=diagramQueue.catch(()=>{}).then(()=>renderDiagrams(version));
   globalThis.biveReady=diagramQueue;
@@ -385,6 +468,21 @@ document.addEventListener('toggle',event=>{if(event.target.open&&event.target.qu
 $('#search').addEventListener('input',event=>{query=event.target.value;render();});
 document.addEventListener('keydown',event=>{if(event.key==='/'&&!['INPUT','TEXTAREA'].includes(document.activeElement?.tagName)){event.preventDefault();$('#search').focus();}});
 document.addEventListener('click',async event=>{
+  if(event.target.closest('[data-exit-comparison]')){
+    const [pathname,params]=location.hash.split('?'),search=new URLSearchParams(params);search.delete('compare');location.hash=pathname+(search.size?'?'+search:'');return;
+  }
+  if(event.target.closest('[data-download-snapshot]')){downloadFile('bive-snapshot.json',JSON.stringify(contractSnapshot(project,{label:project.name+' snapshot'}),null,2),'application/json');return;}
+  const start=event.target.closest('[data-start-iteration]');
+  if(start){
+    const task=async()=>{
+      start.disabled=true;comparisonError='';
+      try{
+        if(embedded){baseline=contractSnapshot(project);previewChanged=true;}
+        else {const response=await fetch('/api/baseline',{method:'POST',headers:{'content-type':'application/json'},body:'{}'});const value=await response.json();if(!response.ok)throw new Error(value.error??'Could not save the baseline');baseline=value;}
+        localBaseline=false;await render();
+      }catch(error){comparisonError=error.message;await render();}
+    };globalThis.biveComparisonReady=task();return;
+  }
   const add=event.target.closest('[data-add-visual]');
   if(add){
     const slot=add.closest('[data-visual-target]'),editor=slot.querySelector(':scope > .visual-editor');
@@ -397,6 +495,23 @@ document.addEventListener('click',async event=>{
   const button=event.target.closest('[data-copy-url]');if(!button)return;
   try{await navigator.clipboard.writeText(location.href);button.textContent='Link copied';}
   catch{button.textContent='Copy the address from your browser';}
+});
+function downloadFile(name,content,type) {
+  const link=document.createElement('a'),url=URL.createObjectURL(new Blob([content],{type}));link.href=url;link.download=name;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+document.addEventListener('change',event=>{
+  if(event.target.id==='changes-filter'){comparisonFilter=event.target.value;render();return;}
+  if(event.target.id!=='baseline-file')return;
+  const file=event.target.files[0];if(!file)return;
+  const task=async()=>{
+    try{
+      if(file.size>16*1024*1024)throw new Error('Choose a snapshot or preview up to 16 MB.');
+      const text=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('Could not read the baseline'));reader.readAsText(file);});
+      const parsed=text.trimStart().startsWith('<')?JSON.parse(new DOMParser().parseFromString(text,'text/html').querySelector('#bive-model')?.textContent??'null'):JSON.parse(text);
+      const next=contractSnapshot(parsed,{label:parsed?.label??file.name,createdAt:parsed?.createdAt??null});
+      buildEntityIndex(snapshotProject(next));baseline=next;localBaseline=true;comparisonError='';if(embedded)previewChanged=true;await render();
+    }catch(error){comparisonError=error instanceof SyntaxError?'Could not read a BIVE baseline from this file.':error.message;await render();}
+  };globalThis.biveComparisonReady=task();
 });
 const readData = file => new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('Could not read this file'));reader.readAsDataURL(file);});
 function mediaValid(data) {
@@ -437,6 +552,7 @@ $('#save-preview').addEventListener('click',()=>{
   copy.querySelector('#bive-model').textContent=safe(project);
   let registry=copy.querySelector('#bive-media');if(!registry){registry=document.createElement('script');registry.id='bive-media';registry.type='application/json';copy.querySelector('#bive-model').after(registry);}
   registry.textContent=safe(media);copy.querySelector('#content').textContent='Loading…';copy.querySelector('#features').textContent='';copy.querySelector('#save-preview').hidden=true;
+  let baselineNode=copy.querySelector('#bive-baseline');if(!baselineNode){baselineNode=document.createElement('script');baselineNode.id='bive-baseline';baselineNode.type='application/json';copy.querySelector('#bive-model').after(baselineNode);}baselineNode.textContent=safe(baseline);
   const link=document.createElement('a'),url=URL.createObjectURL(new Blob(['<!doctype html>\n'+copy.outerHTML],{type:'text/html'}));
   link.href=url;link.download='bive-preview.html';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 });
@@ -446,8 +562,11 @@ async function refresh(initial=false) {
     let response=await fetch('/api/model');if(!response.ok)response=await fetch('./model.json');
     if(!response.ok)throw new Error('Could not load the project');
     const next=await response.json();if(next.error)throw new Error(next.error);
-    const nextSignature=JSON.stringify(next);
-    if(initial||nextSignature!==signature){project=next;signature=nextSignature;await render();}
+    let nextBaseline=baseline;
+    if(!localBaseline){const r=await fetch('/api/baseline');if(r.ok){nextBaseline=await r.json();baselineReadOnly=r.headers.get('x-bive-baseline-readonly')==='true';}else if(r.status===404){const fallback=await fetch('./baseline.json');if(fallback.ok)nextBaseline=await fallback.json();else if(initial)nextBaseline=null;}else throw new Error('Could not read the comparison baseline');}
+    if(nextBaseline)snapshotProject(nextBaseline);
+    const nextSignature=JSON.stringify([next,nextBaseline]);
+    if(initial||nextSignature!==signature){project=next;baseline=nextBaseline;signature=nextSignature;await render();}
   }catch(error){if(initial)$('#content').innerHTML=`<p class="error">${escape(error.message)}</p>`;else $('#freshness').textContent='Source read failed';}
 }
 await refresh(true);

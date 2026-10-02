@@ -6,6 +6,7 @@ import { loadProject, validateProject, packageRoot } from '../src/core.mjs';
 import { verifyCapability } from '../src/verify.mjs';
 import { compareModels, exportViewer, model, serve } from '../src/server.mjs';
 import { contextPacket, encodeContext } from '../src/context.mjs';
+import { contractSnapshot } from '../viewer/diff.js';
 
 const args = process.argv.slice(2);
 const command = args.shift() ?? 'help';
@@ -83,25 +84,25 @@ try {
     await loadProject(root);
     const port = Number(option('port', '4317'));
     if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Invalid port');
-    const server = await serve(root, port);
+    const server = await serve(root, port, {against:option('against')});
     console.log(`BIVE viewer: http://127.0.0.1:${server.address().port}`);
     console.log('Local browser view. Visual attachments save to bive/visuals.yaml; source edits refresh automatically.');
     for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => server.close(() => process.exit(0)));
   } else if (command === 'snapshot') {
     const destination = path.resolve(root, option('out', '.bive/baseline.json'));
     await mkdir(path.dirname(destination), { recursive: true });
-    await writeFile(destination, JSON.stringify(await model(root), null, 2)+'\n');
+    await writeFile(destination, JSON.stringify(contractSnapshot(await model(root),{label:option('label','Iteration baseline')}), null, 2)+'\n');
     console.log(`Saved baseline: ${destination}`);
   } else if (command === 'diff') {
     const before = JSON.parse(await readFile(path.resolve(root, option('against', '.bive/baseline.json')), 'utf8'));
     console.log(JSON.stringify(compareModels(before, await model(root)), null, 2));
   } else if (command === 'build') {
     const destination = path.resolve(root, option('out', '.bive/viewer'));
-    await exportViewer(root, destination);
+    await exportViewer(root, destination, {against:option('against')});
     console.log(`Exported viewer: ${destination}. Open viewer.html directly or serve this folder over HTTP.`);
   } else if (command === 'help' || has('help')) {
     const { version } = JSON.parse(await readFile(path.join(packageRoot, 'package.json'), 'utf8'));
-    console.log(`BIVE ${version}\n\nCommands: init, skills, check, context, inspect, verify, view, snapshot, diff, build\n\nOptions: --root PATH, --json (check), --capability ID (verify/context), --port PORT (view),\n         --operation ID|--rule ID|--schema NAME|--example ID|--check ID|--visual ID (context),\n         --section request,response,behaviour,errors,examples,checks,visuals,sources (context),\n         --max-chars N, --stats (context),\n         --agent codex|claude|all (init/skills), --no-skills (init),\n         --out PATH (snapshot/build), --against PATH (diff)`);
+    console.log(`BIVE ${version}\n\nCommands: init, skills, check, context, inspect, verify, view, snapshot, diff, build\n\nOptions: --root PATH, --json (check), --capability ID (verify/context), --port PORT (view),\n         --operation ID|--rule ID|--schema NAME|--example ID|--check ID|--visual ID (context),\n         --section request,response,behaviour,errors,examples,checks,visuals,sources (context),\n         --max-chars N, --stats (context),\n         --agent codex|claude|all (init/skills), --no-skills (init),\n         --out PATH (snapshot/build), --label TEXT (snapshot), --against PATH (diff/view/build)`);
   }
   else throw new Error(`Unknown command: ${command}`);
 } catch (error) { console.error(`BIVE: ${error.message}`); process.exitCode = 1; }

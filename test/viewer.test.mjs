@@ -7,8 +7,13 @@ import os from 'node:os';
 import { JSDOM } from 'jsdom';
 import { packageRoot } from '../src/core.mjs';
 import { model } from '../src/server.mjs';
+import { contractSnapshot } from '../viewer/diff.js';
+async function viewerCode() {
+  const [app,diff]=await Promise.all(['app.js','diff.js'].map(name=>readFile(path.join(packageRoot,'viewer',name),'utf8')));
+  return app.replace("import { compareModels, contractSnapshot, snapshotProject, canonical } from './diff.js';",()=>diff.replace(/^export /gm,''));
+}
 
-async function fixture({change=()=>{},hash='',realMermaid=false}={}) {
+async function fixture({change=()=>{},hash='',realMermaid=false,baseline=false}={}) {
   const root=await mkdtemp(path.join(os.tmpdir(),'bive-flow-'));
   execFileSync(process.execPath,[path.join(packageRoot,'bin/bive.mjs'),'init','--root',root,'--no-skills']);
   const project=await model(root),cap=project.capabilities[0];
@@ -23,11 +28,12 @@ async function fixture({change=()=>{},hash='',realMermaid=false}={}) {
   cap.presentation={operations:{getStatus:{behaviour:'Returns the current service status.'},setStatus:{behaviour:'Requires permission to update.',diagrams:[{title:'Permission flow',source:'flowchart TD\n A["Request"] --> B{"Permission?"}\n B -->|Yes|C["Update"]\n B -->|No|D["403 forbidden"]'}]}}};
   cap.checks=[{id:'EXAMPLE-V-1',title:'Read status',command:['node','check.mjs'],rules:['EXAMPLE-B-1'],testNames:['status check']}];
   cap.evidence={finishedAt:'2026-10-02T09:00:00Z',stale:false,results:[{id:'EXAMPLE-V-1',status:'passing',tests:[{name:'status check',type:'test:pass'}]}]};
-  change(project);
+  const before=JSON.parse(JSON.stringify(project));change(project);
   const dom=new JSDOM(await readFile(path.join(packageRoot,'viewer/index.html'),'utf8'),{runScripts:'outside-only',url:'https://bive.test/'+hash});
   const {window}=dom,doc=window.document;window.scrollTo=()=>{};
   const style=doc.createElement('style');style.textContent=await readFile(path.join(packageRoot,'viewer/style.css'),'utf8');doc.head.append(style);
   const element=doc.createElement('script');element.id='bive-model';element.type='application/json';element.textContent=JSON.stringify(project);doc.body.append(element);
+  if(baseline){const node=doc.createElement('script');node.id='bive-baseline';node.type='application/json';node.textContent=JSON.stringify(contractSnapshot(before,{label:'Before this iteration',createdAt:'2026-10-01T10:00:00Z'}));doc.body.append(node);}
   if(realMermaid){
     window.structuredClone=structuredClone;
     // SVG text measurement is approximate in JSDOM: tests assess parsing/rendering, not pixel layout.
@@ -35,7 +41,7 @@ async function fixture({change=()=>{},hash='',realMermaid=false}={}) {
     window.SVGElement.prototype.getComputedTextLength=function(){return Math.max(30,(this.textContent??'').length*6);};
     await window.eval(await readFile(path.join(packageRoot,'viewer/vendor/mermaid.min.js'),'utf8'));
   } else window.mermaid={initialize:config=>window.mermaidConfig=config,render:async(id)=>({svg:`<svg id="${id}" xmlns="http://www.w3.org/2000/svg"></svg>`})};
-  await window.eval(`(async()=>{${await readFile(path.join(packageRoot,'viewer/app.js'),'utf8')}\n})()`);
+  await window.eval(`(async()=>{${await viewerCode()}\n})()`);
   const click=async selector=>{
     const item=doc.querySelector(selector);assert.ok(item,selector);
     if(item.tagName==='A'&&item.hash&&item.hash!==window.location.hash){
@@ -60,6 +66,82 @@ test('feature overview starts with API signatures and ends with checks, without 
   assert.ok(doc.querySelector('#api').compareDocumentPosition(doc.querySelector('.checks-section'))&dom.window.Node.DOCUMENT_POSITION_FOLLOWING);
   assert.ok(!doc.querySelector('#content').textContent.includes('Browse shared types'));
   dom.window.close();
+});
+
+test('Changes lists semantic edits, opens a stable before/now page and links to the affected type',async()=>{
+  const options={baseline:true,change:p=>{p.capabilities[0].openapi.components.schemas.User.properties.avatar={type:'string'};}};
+  const {dom,doc,window,click}=await fixture(options);
+  assert.equal(doc.querySelectorAll('[data-change]').length,0,'Reading mode stays uncluttered');
+  await click('#changes-link');assert.equal(doc.querySelector('h1').textContent,'Changes');
+  assert.equal(doc.querySelectorAll('.changes-list>li').length,1);
+  assert.ok(doc.querySelector('.changes-list').textContent.includes('User'));
+  assert.equal(doc.querySelectorAll('[data-add-visual]').length,0);
+  const directHash=doc.querySelector('.changes-list a').hash;await click('.changes-list a');
+  assert.ok(doc.querySelector('.diff-table').textContent.includes('avatar'));
+  assert.ok(doc.querySelector('.diff-table thead').textContent.includes('Before'));
+  const direct=await fixture({...options,hash:directHash});assert.equal(direct.doc.querySelector('h1').textContent,'User');
+  await click('.page-actions a');assert.equal(window.location.hash,'#/features/example/types/User?compare=1');
+  assert.ok(doc.querySelector('[data-change=added]').textContent.includes('avatar'));
+  assert.ok(doc.querySelector('.comparison-bar'));assert.ok(doc.querySelector('.change-badge'));
+  dom.window.close();direct.dom.window.close();
+});
+
+test('comparison highlights added, changed and removed fields without adding object attachment controls',async()=>{
+  const {dom,doc,window,click}=await fixture({baseline:true,hash:'#/features/example/api/setStatus?compare=1&rule=EXAMPLE-B-2',change:p=>{
+    const user=p.capabilities[0].openapi.components.schemas.User;user.required=[];delete user.properties.name;user.properties.avatar={type:'string'};
+    p.capabilities[0].operations[1].requestBody.content['application/json'].schema.properties.load.minimum=0.2;
+  }});
+  assert.ok(doc.querySelector('.io-grid [data-change=added]').textContent.includes('avatar'));
+  assert.ok(doc.querySelector('.io-grid [data-change=removed]').textContent.includes('name'));
+  assert.ok([...doc.querySelectorAll('.io-grid [data-change=changed]')].some(n=>n.textContent.includes('id?')));
+  assert.equal(doc.querySelectorAll('.signature [data-add-visual]').length,0);
+  assert.equal(doc.querySelectorAll('.io-grid>.section').length,0);
+  assert.equal(doc.querySelectorAll('.io-heading>[data-add-visual]').length,2);
+  await click('[data-exit-comparison]');await new Promise(resolve=>window.setTimeout(resolve,0));await window.biveReady;
+  assert.ok(window.location.hash.includes('rule=EXAMPLE-B-2'));assert.ok(!window.location.hash.includes('compare='));
+  assert.equal(doc.querySelectorAll('[data-change],.change-badge,.comparison-bar').length,0);
+  dom.window.close();
+});
+
+test('removed endpoints remain reviewable, and category filtering does not hide their change details',async()=>{
+  const {dom,doc,window,click}=await fixture({baseline:true,hash:'#/changes',change:p=>{
+    p.capabilities[0].operations.pop();p.capabilities[0].openapi.components.schemas.User.properties.avatar={type:'string'};
+  }});
+  const select=doc.querySelector('#changes-filter');select.value='operation';select.dispatchEvent(new window.Event('change',{bubbles:true}));
+  assert.equal(doc.querySelectorAll('.changes-list>li').length,1);assert.ok(doc.querySelector('.changes-list').textContent.includes('Removed'));
+  await click('.changes-list a');assert.ok(doc.querySelector('.diff-table').textContent.includes('/status/{id}'));
+  assert.equal(doc.querySelectorAll('.page-actions a').length,0);assert.ok(doc.querySelector('.page-actions').textContent.includes('Removed'));
+  dom.window.close();
+});
+
+test('baseline picker reads earlier HTML without executing it and preserves the comparison on invalid input',async()=>{
+  const {dom,doc,window}=await fixture({hash:'#/changes'});
+  const old=JSON.parse(JSON.stringify(JSON.parse(doc.querySelector('#bive-model').textContent)));old.capabilities[0].openapi.components.schemas.User.properties.previous={type:'string'};
+  const choose=async(content,name)=>{
+    const input=doc.querySelector('#baseline-file');Object.defineProperty(input,'files',{value:[new window.File([content],name)],configurable:true});
+    input.dispatchEvent(new window.Event('change',{bubbles:true}));await window.biveComparisonReady;
+  };
+  await choose('<script>window.wasExecuted=true</script><script id="bive-model" type="application/json">'+JSON.stringify(old)+'</script>','previous.html');
+  assert.equal(window.wasExecuted,undefined);assert.equal(doc.querySelectorAll('.changes-list>li').length,1);
+  assert.ok(doc.querySelector('#content').textContent.includes('previous.html'));
+  await choose('{"name":"not a contract"}','invalid.json');
+  assert.equal(doc.querySelectorAll('.changes-list>li').length,1);assert.ok(doc.querySelector('.comparison-error').textContent.includes('BIVE'));
+  dom.window.close();
+});
+
+test('starting an iteration and saving the exported preview retains the baseline and clean comparison',async()=>{
+  const {dom,doc,window,click}=await fixture({hash:'#/changes'});
+  await click('[data-start-iteration]');await window.biveComparisonReady;
+  assert.ok(doc.querySelector('.empty').textContent.includes('No spec changes'));
+  assert.equal(doc.querySelector('#save-preview').hidden,false);
+  let saved;window.URL.createObjectURL=blob=>{saved=blob;return 'blob:preview';};window.URL.revokeObjectURL=()=>{};window.HTMLAnchorElement.prototype.click=function(){};
+  await click('#save-preview');
+  const html=await new Promise(resolve=>{const reader=new window.FileReader();reader.onload=()=>resolve(reader.result);reader.readAsText(saved);});
+  const reload=new JSDOM(html,{runScripts:'outside-only',url:'https://bive.test/#/changes'});
+  const baseline=JSON.parse(reload.window.document.querySelector('#bive-baseline').textContent);assert.equal(baseline.format,'bive-snapshot');assert.equal(baseline.project.capabilities[0].evidence,undefined);
+  reload.window.mermaid={initialize(){},render:async()=>({svg:'<svg></svg>'})};reload.window.scrollTo=()=>{};
+  await reload.window.eval(`(async()=>{${await viewerCode()}\n})()`);
+  assert.ok(reload.window.document.querySelector('.empty').textContent.includes('No spec changes'));dom.window.close();reload.window.close();
 });
 
 test('endpoint opens a shareable page, direct navigation preserves it, and Back returns to the feature',async()=>{
@@ -209,7 +291,7 @@ test('visuals stay beside their target, and static attachments survive Save prev
   assert.equal(model.visuals.length,2);assert.ok(!JSON.stringify(model).includes('base64'));
   assert.ok(reload.window.document.querySelector('#bive-media').textContent.includes(png.toString('base64')));
   reload.window.scrollTo=()=>{};reload.window.mermaid={initialize(){},render:async()=>({svg:'<svg></svg>'})};
-  await reload.window.eval(`(async()=>{${await readFile(path.join(packageRoot,'viewer/app.js'),'utf8')}\n})()`);
+  await reload.window.eval(`(async()=>{${await viewerCode()}\n})()`);
   assert.ok(reload.window.document.querySelector('.visual img[alt="Updated state"]'));
   dom.window.close();reload.window.close();
 });
