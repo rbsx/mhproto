@@ -1,6 +1,7 @@
 # MHProto guide
 
 Detailed usage and reference documentation for the [project website](https://mhproto.dev/docs/).
+New to MHProto? Start with [How it works](how-it-works.md), which follows one feature end to end.
 
 ## Start locally
 

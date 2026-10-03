@@ -8,303 +8,38 @@ For developers using Claude Code, Codex and other coding agents on existing proj
 
 [![npm (next)](https://img.shields.io/npm/v/mhproto/next?label=npm%40next&color=cb3837)](https://www.npmjs.com/package/mhproto)
 [![CI](https://github.com/rbsx/mhproto/actions/workflows/check.yml/badge.svg)](https://github.com/rbsx/mhproto/actions/workflows/check.yml)
-[![Node ≥ 22](https://img.shields.io/badge/node-%E2%89%A5%2022-339933)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-2458ca)](LICENSE)
 
-[**Live demo**](https://mhproto.dev/demo/) · [Quick start](#quick-start) · [How it works](#how-it-works) · [Docs](https://mhproto.dev/docs/)
+[**Live demo**](https://mhproto.dev/demo/) · [How it works](doc/how-it-works.md) · [Docs](https://mhproto.dev/docs/)
 
-<a href="https://mhproto.dev/demo/"><img src=".github/assets/walkthrough.gif" width="100%" alt="42-second walkthrough of MHProto. The same rule ID links a feature's Markdown rules, OpenAPI operation, example and test. The browser viewer shows the feature, an endpoint page, a type page listing every endpoint that uses it, and the changes since the last snapshot. The terminal prints the compact context packet an agent reads for one endpoint. The viewer then shows 10 of 10 linked checks passing. The video ends with npm install -D mhproto@next."></a>
-
-<sub>A real app's contract, from the <a href="https://mhproto.dev/demo/">live demo</a>. <a href="https://mhproto.dev/#walkthrough">Watch it in HD</a></sub>
+<a href="https://mhproto.dev/#walkthrough"><img src=".github/assets/walkthrough.gif" width="100%" alt="42-second walkthrough of MHProto. The same rule ID links a feature's Markdown rules, OpenAPI operation, example and test. The browser viewer shows the feature, an endpoint page, a type page listing every endpoint that uses it, and the changes since the last snapshot. The terminal prints the compact context packet an agent reads for one endpoint. The viewer then shows 10 of 10 linked checks passing. The video ends with npm install -D mhproto@next."></a>
 
 </div>
 
-MHProto (Machine–Human Protocol) keeps a feature's **behaviour rules, API, examples and
-verification checks** as plain files in your repository. `npx mhproto view` turns them into
-linked pages your team can review. Your coding agent fetches a compact packet with the exact
-rules for the endpoint it is changing. `npx mhproto verify` runs the linked checks and records
-evidence tied to the current files, so later edits show up as stale and rules without a check
-show up as gaps.
+## What you get
 
-No hosted service, no account and no AI calls: it's a CLI over files you already review in pull requests.
+- **Describe:** numbered rules, your OpenAPI 3.1, examples and checks as plain files, linked by rule ID.
+- **Review:** linked pages for every feature, endpoint and type, plus what changed since the last snapshot.
+- **Hand off:** your agent gets one endpoint's exact rules, types, errors and check status.
+- **Verify:** run the linked tests and see which checks pass, fail or are stale, and which rules have none.
 
-## Why MHProto
-
-It is built for **developers using coding agents on existing projects**, especially those who
-already write specs or acceptance criteria. It fits features exposed as HTTP endpoints and
-described in OpenAPI 3.1.
-
-- **The spec lives somewhere else.** Acceptance criteria sit in tickets, PR descriptions and
-  chat, so the agent gets a paraphrase or nothing at all.
-- **Agents read too much or too little.** Pasting the whole spec wastes context, and a one-line
-  prompt leaves out the edge cases.
-- **"Done" is hard to check.** After a change, nobody can say which rules have a passing test,
-  which results are out of date, and which rules were never tested.
-
-MHProto puts the agreement next to the code, in a form both sides can use:
-
-|                      | People                                   | Coding agents                              |
-| -------------------- | ---------------------------------------- | ------------------------------------------ |
-| Read the contract    | Linked pages in a browser                | Scoped JSON from `mhproto context`         |
-| Change the contract  | Markdown, YAML and OpenAPI in a PR       | The same files, through the bundled skills |
-| See what changed     | **Changes** view against a snapshot      | `mhproto diff`                             |
-| Know what's verified | **Checks** on every feature and endpoint | Check status in endpoint packets           |
-
-## How it works
-
-This walkthrough follows one small feature: cancelling an order. The snippets are excerpts
-from a working project, and the outputs are real.
-
-### 1. Describe the feature in your repo
-
-Each feature (a _capability_ in the files and CLI) has four parts: numbered behaviour rules, an
-OpenAPI interface, examples and checks. The interface is one OpenAPI 3.1 file with local `$ref`s
-(3.0 isn't supported), and every operation in that file belongs to the feature.
-
-```text
-mhproto.yaml                       # lists your features and their files
-mhproto/
-  capabilities/orders/
-    spec.md                        # Behaviour: numbered rules
-    examples.yaml                  # Examples: given / when / then
-    checks.yaml                    # Verification: rules → real tests
-  interfaces/openapi.yaml          # Interface: your OpenAPI 3.1
-```
-
-Rules are Markdown bullets with stable IDs:
-
-```md
-- **ORDER-CANCEL-1** A customer can cancel their own order while it is `pending`.
-- **ORDER-CANCEL-2** Cancelling a `shipped` order returns 409 `not_cancellable`
-  and leaves the order unchanged.
-- **ORDER-CANCEL-3** Cancelling an already cancelled order returns it unchanged.
-```
-
-Operations and tests refer to those IDs:
-
-```yaml
-# mhproto/interfaces/openapi.yaml (excerpt)
-/orders/{orderId}/cancel:
-  post:
-    operationId: cancelOrder
-    x-mhproto-rules: [ORDER-CANCEL-1, ORDER-CANCEL-2, ORDER-CANCEL-3]
-```
-
-```yaml
-# mhproto/capabilities/orders/checks.yaml
-checks:
-  - id: ORDER-V-1
-    title: Cancelling respects the order status
-    rules: [ORDER-CANCEL-1, ORDER-CANCEL-2]
-    examples: [ORDER-E-1]
-    runner: node-test
-    testNames:
-      - ORDER-CANCEL-1 cancels a pending order
-      - ORDER-CANCEL-2 refuses to cancel a shipped order
-    command: [node, --test, --test-reporter, '{mhprotoNodeReporter}', test/orders.test.js]
-    files: [test/orders.test.js]
-```
-
-`npx mhproto check` validates every reference, schema and example payload. It exits non-zero
-on a broken link, so you can run it in CI.
-
-> [!TIP]
-> **Already have the code?** Ask your agent to _"use mhproto-discover to draft a contract for
-> the orders API"_. It drafts rules from the existing code and marks each one as confirmed,
-> inferred or unknown, with the source paths it used.
-
-### 2. Review it in a browser
-
-```sh
-npx mhproto view     # http://127.0.0.1:4317, refreshes as you edit
-```
-
-Suppose the team then adds rule `ORDER-CANCEL-4` ("Cancelling a paid order starts a full
-refund") and a `refundId` field. After `npx mhproto snapshot` and those edits, the endpoint page
-shows exactly what changed:
-
-<img src=".github/assets/review.png" width="100%" alt="The cancelOrder endpoint page in the MHProto viewer: request and response signatures, then four numbered rules. Compared with the saved snapshot, the response field refundId and the rule ORDER-CANCEL-4 are marked Added.">
-
-- **One page per feature, endpoint and type.** Each endpoint page shows its request, response,
-  rules, errors, examples and checks together. Each type's page lists every endpoint that uses it.
-- **Changes since the last iteration.** Run `npx mhproto snapshot`, edit the contract, then
-  review what was added, changed or removed, marked inline as above.
-- **Design references.** Attach screenshots, PDFs or design links to a rule, an example or a
-  request/response header.
-- **Share without a server.** `npx mhproto build` exports one self-contained `viewer.html`.
-
-### 3. Give your agent the relevant context
-
-`init` installs five agent skills in your repository (`.claude/skills` with `--agent claude`,
-`.agents/skills` with `--agent codex`). Once the change is agreed, hand it over:
-
-> Use mhproto-implement to add ORDER-CANCEL-4 to `cancelOrder`, then run mhproto verify.
-
-The skills tell the agent to fetch only the part it is changing, rather than the whole contract:
-
-```console
-$ npx mhproto context --capability orders --operation cancelOrder
-```
-
-```jsonc
-// Excerpt. The real output is one line of JSON.
-{
-  "operation": { "operationId": "cancelOrder", "method": "POST", "path": "/orders/{orderId}/cancel" },
-  "request": { "parameters": [{ "name": "orderId", "in": "path", "required": true, … }] },
-  "response": { "200": { "schema": { "name": "Order", "required": ["id", "status"], … } } },
-  "behaviour": {
-    "rules": [
-      { "id": "ORDER-CANCEL-1", "text": "A customer can cancel their own order while it is `pending`." },
-      …
-      { "id": "ORDER-CANCEL-4", "text": "Cancelling a paid order starts a full refund." }
-    ]
-  },
-  "errors": { "cases": [{ "status": "409", "when": "The order has shipped" }], … },
-  "examples": [{ "id": "ORDER-E-1", "given": "Order A-17 has shipped.", … }],
-  "checks": [{ "id": "ORDER-V-1", "rules": ["ORDER-CANCEL-1", "ORDER-CANCEL-2"], "status": "passing" }]
-}
-```
-
-Packets are assembled by code, not summarised by a model, so rule text stays exact. Nested
-types and rule groups are fetched on demand. A packet over its size budget fails with
-guidance; it is never silently truncated. In the pilot behind the
-[demo](https://mhproto.dev/demo/), one endpoint's packet was 8.5K characters, against 130K for
-the whole project model. That is text size, not a token or billing figure; see the
-[measurements](doc/context-design.md).
-
-### 4. Verify
-
-```console
-$ npx mhproto verify --capability orders
-Running 1 checks for orders
-PASSING ORDER-V-1 (54ms)
-```
-
-`verify` runs each check's command without a shell and stores the result with a digest of the
-contract and tracked files. Each check is in one of four states, shown in the viewer and in
-endpoint packets:
-
-| State       | Meaning                                                                                                         |
-| ----------- | --------------------------------------------------------------------------------------------------------------- |
-| **Passing** | The command exited 0 against the current files. With `runner: node-test`, every named test also ran and passed. |
-| **Failing** | The command failed or timed out, or a named test failed, was missing, skipped or TODO.                          |
-| **Stale**   | The contract or a tracked source file changed since the last run.                                               |
-| **Not run** | The check has no recorded run yet (`unchecked` in packets).                                                     |
-
-Per-test evidence uses Node's built-in test runner (`runner: node-test`). Other runners, such as
-Jest, Vitest or pytest, work as plain commands, where passing means exit code 0.
-
-Rules with no linked check are listed as gaps in the viewer and by `check`, so the next task is
-obvious:
-
-```console
-$ npx mhproto check
-Shop: 1 capability, 4 rules, 1 operations
-WARNING [orders] ORDER-CANCEL-3 has no linked executable check
-WARNING [orders] ORDER-CANCEL-4 has no linked executable check
-0 errors, 2 warnings
-```
+Local files and a CLI: no hosted service, no account and no AI calls.
 
 ## Quick start
 
-Requires Node 22 or newer. From your application's directory:
-
 ```sh
-npm install -D mhproto@next          # development preview
-npx mhproto init --agent claude      # or --agent codex, or --agent all
-npx mhproto check
-npx mhproto view
+npm install -D mhproto@next        # Node 22+
+npx mhproto init --agent claude    # or --agent codex, or --agent all
+npx mhproto view                   # serves http://127.0.0.1:4317
 ```
 
-`init` creates `mhproto.yaml`, `mhproto/system.md`, a draft `example` feature and the agent
-skills. If any of those files already exist, it stops without writing anything. Replace the
-example with one real feature, or ask your agent to draft it with **mhproto-discover**. Then run
-`npx mhproto snapshot` so you can review your first change.
+Replace the generated example with one real feature, or ask your agent to _"use mhproto-discover
+to draft a contract for one feature"_.
 
-## Agent skills
+**Next:** [How it works](doc/how-it-works.md) follows one feature end to end, with real files and
+output. The [reference guide](https://mhproto.dev/docs/reference/) covers every command.
 
-| Skill               | Use it to                                                                          |
-| ------------------- | ---------------------------------------------------------------------------------- |
-| `mhproto-discover`  | Draft a contract from existing code, marking rules confirmed, inferred or unknown. |
-| `mhproto-specify`   | Propose or revise rules, API, examples and checks before coding.                   |
-| `mhproto-implement` | Implement an agreed contract without silently changing it.                         |
-| `mhproto-verify`    | Write tests linked to rules and examples, then run `mhproto verify`.               |
-| `mhproto-reconcile` | Find and resolve drift between the spec, schemas, examples and code.               |
+---
 
-The skills are plain `SKILL.md` files inside your repository: read them, edit them and commit
-them. Your global agent settings stay unchanged.
-
-## Commands
-
-| Command             | What it does                                                                       |
-| ------------------- | ---------------------------------------------------------------------------------- |
-| `init`              | Scaffold `mhproto.yaml`, a draft feature and the agent skills                      |
-| `skills`            | Install the agent skills on their own                                              |
-| `check`             | Validate references, schemas, example payloads and check bindings                  |
-| `view`              | Serve the local viewer, which refreshes when files change                          |
-| `context`           | Print the feature index, or a scoped endpoint, rule, type, example or check packet |
-| `verify`            | Run linked checks and store evidence tied to the current files                     |
-| `snapshot` / `diff` | Save a baseline and list contract changes against it                               |
-| `build`             | Export a self-contained `viewer.html` and `model.json`                             |
-| `inspect`           | Print the normalised project model as JSON                                         |
-
-Run `npx mhproto help` for options. The file format is described in
-[`format.md`](skills/mhproto-specify/references/format.md). The full guide is at
-[mhproto.dev/docs](https://mhproto.dev/docs/).
-
-## FAQ
-
-**Do I have to describe my whole app?** No. Start with one feature. The demo app describes
-two of its features (the larger has 32 rules, 6 endpoints and 23 linked checks); the rest of
-that app keeps its existing docs.
-
-**Which agents does it work with?** Skills are included for Claude Code and Codex. Any agent
-that can run a shell command can use `mhproto context`, `check` and `verify`.
-
-**Does it generate code or tests?** No. Your agent writes the code and tests as usual.
-MHProto gives it the agreed contract and records the evidence.
-
-**Why not just keep a spec file my agent reads?** Nothing checks a plain spec file. `check` fails
-when an operation, example or check cites a rule that doesn't exist. `context` returns only the
-rules linked to the endpoint being changed. `verify` ties results to file digests, so later
-edits show up as stale.
-
-**How is this different from OpenAPI docs?** OpenAPI describes the shapes. MHProto adds the
-behaviour rules, examples and test evidence around those shapes, links them all by ID, and
-gives agents scoped slices.
-
-## Good to know
-
-- **Deterministic.** Packets, checks and diffs are computed from your files by code. Runtime
-  dependencies are `yaml`, `ajv` and `ajv-formats`.
-- **CI-friendly.** `npx mhproto check` exits non-zero on contract errors, and
-  `npx mhproto verify --capability ID` exits non-zero when a check fails. Stale evidence is a
-  warning, not an error.
-- **Works with your schemas.** MHProto reads OpenAPI 3.1 with local references and JSON
-  Schema 2020-12 payloads. Keep generating types with your current tools.
-- **Evidence, not proof.** A passing check means its command, and any named tests, passed
-  against the current files. It does not prove every case of a rule.
-- **Runs your commands.** `verify` executes the argv commands from `checks.yaml` without a
-  shell or a sandbox. Only run it in repositories you trust.
-- **Review before sharing.** `build` exports omit captured output, failure messages and the
-  absolute project path. They keep contract text, check commands and their `env` values, and
-  attachments.
-
-## Status
-
-`0.8.0-preview.0` is a development preview on npm's `next` tag. CI covers Node 22 and 24 on
-Linux and macOS; Windows is not yet verified. The file format may change before 1.0. The
-[release review](doc/release-review.md) records the evidence and limits.
-
-Feedback is very welcome, especially from teams already writing specs or acceptance criteria
-for coding agents. [Open an issue](https://github.com/rbsx/mhproto/issues).
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md). `npm ci && npm run check` runs formatting and the test
-suite. There is no build step.
-
-## License
-
-[MIT](LICENSE). The bundled offline diagram renderer (Mermaid) keeps its own notices; see
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+`0.8.0-preview.0` · development preview · [Feedback](https://github.com/rbsx/mhproto/issues) ·
+[Contributing](CONTRIBUTING.md) · [MIT](LICENSE) ([third-party notices](THIRD_PARTY_NOTICES.md))
