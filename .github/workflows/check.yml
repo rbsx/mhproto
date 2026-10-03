@@ -20,7 +20,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
-      - run: npm run build:site
       - run: npm pack --dry-run --json --ignore-scripts
   dependencies:
     runs-on: ubuntu-latest

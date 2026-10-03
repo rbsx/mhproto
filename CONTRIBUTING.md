@@ -51,7 +51,7 @@ the browser. Standalone export inlines that module, the viewer and Mermaid.
 
 ## Before a public release
 
-Read doc/release-review.md. Keep `private: true` until its release gates pass.
+Read [the publishing steps](doc/publishing.md) and doc/release-review.md. Keep `private: true` until its release gates pass.
 `npm pack --dry-run --json --ignore-scripts` inspects the planned file list without
 creating an archive. `npm pack` runs the prepack check before creating a package.
 Verify a clean installation of the resulting tarball in a separate project before

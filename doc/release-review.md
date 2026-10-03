@@ -2,6 +2,25 @@
 
 Reviewed 2026-10-02. **Decision: keep the package private; do not create or publish a new npm release yet.** The implementation is materially safer and more predictable after the fixes below. Remaining release gates are concrete verification work, not a request for a broad rewrite.
 
+## Status update: 2026-10-03
+
+The original findings and local-only evidence below are retained as a dated review.
+Subsequent work cleared these gates:
+
+- The hosted Linux/macOS, Node 22/24 matrix, dependency audit/signature job and
+  desktop/mobile Chromium suite passed for
+  [commit 7d75f8b](https://github.com/rbsx/mhproto/actions/runs/37068214828).
+- Live npm audits reported no known vulnerabilities in the locked dependency tree.
+  This does not authenticate the copied Mermaid bundle.
+- The library is public at https://github.com/rbsx/mhproto, and the homepage,
+  documentation and interactive demo are live at https://mhproto.dev.
+- Desktop/mobile website flows and offline demo save/reload passed in Chromium.
+
+Mermaid upstream provenance and its complete license inventory remain open.
+An actual tarball consumer installation remains to be checked after that gate.
+Windows remains unverified. No npm version has been published; `private: true`
+remains enabled. See [publishing steps](publishing.md) for the release sequence.
+
 ## Scope and method
 
 Reviewed the CLI, file loading and writes, metadata validation, OpenAPI/schema handling, scoped agent context, verification evidence, HTTP handler, portable exports, visual attachments, type navigation, comparison module, five bundled skills, dependency lockfile and planned npm contents. Checked the isolated Impostor pilot against the revised implementation. The original application was not edited.

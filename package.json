@@ -26,9 +26,7 @@
     "format:check": "prettier --check .",
     "check": "npm run format:check && npm test",
     "prepack": "npm run check",
-    "test:browser": "node --test test/browser.mjs",
-    "build:site": "node scripts/build-site.mjs",
-    "dev:site": "node scripts/serve-site.mjs"
+    "test:browser": "node --test test/browser.mjs"
   },
   "engines": {
     "node": ">=22"
@@ -41,7 +39,6 @@
   "license": "MIT",
   "devDependencies": {
     "jsdom": "^26.1.0",
-    "marked": "18.0.14",
     "playwright": "1.63.0",
     "prettier": "3.6.2"
   },
