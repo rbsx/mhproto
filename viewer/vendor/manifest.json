@@ -1,9 +1,9 @@
 {
   "claimedPackage": "mermaid",
   "claimedVersion": "11.16.1",
-  "sha256": "008cd4dd55210b22a7e6a65107ff6c4115a29e5e6a3f2f97af9104ed75ba4c6a",
+  "sha256": "f9500ee2225021df4b7d9411d9b33a939f5f50e4538356dc01637ee224d2ee97",
   "upstreamVerified": true,
-  "provenance": "Verified byte-for-byte against the official mermaid@11.16.1 npm browser bundle with the recorded deterministic local wrapper. No independent source rebuild was performed.",
+  "provenance": "Verified official npm bundle with deterministic namespace wrapper and appended complete notice file; executable upstream body unchanged. No independent source rebuild performed.",
   "registryArtifact": {
     "url": "https://registry.npmjs.org/mermaid/-/mermaid-11.16.1.tgz",
     "integrity": "sha512-TQsq6u22fAn3rek5VOubrhKPo1g5hwC3FXUN9hiyupTckcYiGuuKGkNQrKYwGJkXUxZdojwRG46gsSCFZMDp4g==",
@@ -11,6 +11,8 @@
     "bundleSha256": "18327bef70d96fb505fe7287d9f6a7362ebf07ff6576ddfaffb1a06f3e1a2954",
     "sourceMapSha256": "41fa96e141da409c4e6fd33b9e87e4d7e844a8ebc088851d7a394d80362c946f"
   },
-  "licenseInventoryComplete": false,
-  "verifiedAt": "2026-10-03"
+  "licenseInventoryComplete": true,
+  "verifiedAt": "2026-10-03",
+  "licenseInventory": "license-inventory.json",
+  "noticeSha256": "eca44625868f653105b97b5a27a4838659eb565ee488e3ee2d610041334488fd"
 }

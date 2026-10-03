@@ -36,6 +36,9 @@ jobs:
       - name: Verify registry signatures and available provenance
         if: ${{ !cancelled() }}
         run: npm audit signatures --json > signatures.json
+      - name: Verify vendored renderer provenance and licenses
+        if: ${{ !cancelled() }}
+        run: npm run verify:vendor
       - uses: actions/upload-artifact@v5
         if: ${{ !cancelled() }}
         with:

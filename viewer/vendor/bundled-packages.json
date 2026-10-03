@@ -1,7 +1,7 @@
 {
   "source": "mermaid@11.16.1 dist/mermaid.min.js.map",
   "sourceMapSha256": "41fa96e141da409c4e6fd33b9e87e4d7e844a8ebc088851d7a394d80362c946f",
-  "status": "Versions identified from the official source map; license texts and obligations still require review.",
+  "status": "Direct Mermaid source-map version inventory. The complete recursive 74-entry reviewed license inventory is in license-inventory.json.",
   "packages": [
     "@braintree/sanitize-url@7.1.2",
     "@iconify/utils@3.0.2",

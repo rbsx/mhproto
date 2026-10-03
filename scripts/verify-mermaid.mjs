@@ -48,7 +48,7 @@ try {
   const exportLine =
     'globalThis["mermaid"] = globalThis.__esbuild_esm_mermaid_nm["mermaid"].default;';
   assert.equal(bundle.split(exportLine).length, 2, 'Expected one upstream export line');
-  const wrapped =
+  let wrapped =
     '/*\n' +
     license.trimEnd() +
     '\n*/\n(function(){\n' +
@@ -57,6 +57,27 @@ try {
       'globalThis["mermaid"] = __esbuild_esm_mermaid_nm["mermaid"].default;',
     ) +
     '\n})();\n';
+  if (manifest.licenseInventoryComplete) {
+    const licenses = JSON.parse(
+      await readFile(path.join(vendor, manifest.licenseInventory), 'utf8'),
+    );
+    assert.equal(licenses.complete, true, 'License inventory status');
+    const notice = await readFile(path.join(vendor, licenses.noticeFile), 'utf8');
+    assert.equal(hash(notice), manifest.noticeSha256, 'Notice appendix hash');
+    assert.equal(hash(notice), licenses.noticeSha256, 'Inventory notice hash');
+    assert.ok(!notice.includes('*/'), 'Notice must fit inside the appended comment');
+    for (const record of [
+      ...licenses.packages.flatMap((entry) => entry.notices),
+      ...licenses.supplementalNotices,
+    ]) {
+      assert.equal(
+        hash(await readFile(path.join(vendor, record.file))),
+        record.sha256,
+        record.file,
+      );
+    }
+    wrapped += '\n/*\n' + notice.trimEnd() + '\n*/\n';
+  }
   assert.equal(
     wrapped,
     await readFile(path.join(vendor, 'mermaid.min.js'), 'utf8'),
@@ -81,7 +102,9 @@ try {
     `Verified official Mermaid 11.16.1 archive, bundle, license, local wrapper and ${packages.length} bundled package versions.`,
   );
   console.log(
-    'The complete bundled license review remains open; this check does not clear that gate.',
+    manifest.licenseInventoryComplete
+      ? 'Complete recorded license inventory and inline notices verified. See bundled-audit.json for the separate security release gate.'
+      : 'The complete bundled license review remains open; this check does not clear that gate.',
   );
 } finally {
   await rm(temporary, { recursive: true, force: true });

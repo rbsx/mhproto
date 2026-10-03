@@ -1,0 +1,200 @@
+{
+  "dompurify": [
+    {
+      "id": 1120802,
+      "url": "https://github.com/advisories/GHSA-hpcv-96wg-7vj8",
+      "title": "DOMPurify: Cross-realm IN_PLACE sanitization leaves executable markup intact via realm-bound `instanceof` checks",
+      "severity": "moderate",
+      "vulnerable_versions": "<=3.4.5",
+      "cwe": ["CWE-79", "CWE-501", "CWE-693"],
+      "cvss": {
+        "score": 6.1,
+        "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N"
+      }
+    },
+    {
+      "id": 1120803,
+      "url": "https://github.com/advisories/GHSA-r47g-fvhr-h676",
+      "title": "DOMPurify: IN_PLACE mode preserves attributes of a clobbered root element, allowing XSS via attacker-controlled root DOM",
+      "severity": "moderate",
+      "vulnerable_versions": "<=3.4.5",
+      "cwe": ["CWE-79", "CWE-693", "CWE-1321"],
+      "cvss": {
+        "score": 6.1,
+        "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N"
+      }
+    },
+    {
+      "id": 1120813,
+      "url": "https://github.com/advisories/GHSA-rp9w-3fw7-7cwq",
+      "title": "DOMPurify IN_PLACE Sanitization Bypass via Attached Shadow Root Inside <template>.content",
+      "severity": "moderate",
+      "vulnerable_versions": "<=3.4.6",
+      "cwe": ["CWE-79"],
+      "cvss": {
+        "score": 0,
+        "vectorString": null
+      }
+    },
+    {
+      "id": 1124233,
+      "url": "https://github.com/advisories/GHSA-cmwh-pvxp-8882",
+      "title": "DOMPurify: Permanent `ALLOWED_ATTR` pollution via `setConfig()` bypassing the hook clone-guard (incomplete fix of the 3.4.7 hook-pollution patch)",
+      "severity": "moderate",
+      "vulnerable_versions": "<=3.4.10",
+      "cwe": ["CWE-79", "CWE-471", "CWE-665"],
+      "cvss": {
+        "score": 0,
+        "vectorString": null
+      }
+    },
+    {
+      "id": 1124234,
+      "url": "https://github.com/advisories/GHSA-vxr8-fq34-vvx9",
+      "title": "DOMPurify: Trusted Types policy survives `clearConfig()` and can poison later `RETURN_TRUSTED_TYPE` output",
+      "severity": "low",
+      "vulnerable_versions": "<3.4.9",
+      "cwe": ["CWE-693"],
+      "cvss": {
+        "score": 0,
+        "vectorString": null
+      }
+    },
+    {
+      "id": 1124235,
+      "url": "https://github.com/advisories/GHSA-gvmj-g25r-r7wr",
+      "title": "DOMPurify: SAFE_FOR_TEMPLATES bypass - template expressions survive sanitization inside <template> content when using DOM output modes",
+      "severity": "low",
+      "vulnerable_versions": ">=3.0.0 <=3.4.7",
+      "cwe": ["CWE-79"],
+      "cvss": {
+        "score": 0,
+        "vectorString": null
+      }
+    },
+    {
+      "id": 1124236,
+      "url": "https://github.com/advisories/GHSA-x4vx-rjvf-j5p4",
+      "title": "DOMPurify: `IN_PLACE` mode trusts attacker-controlled `nodeName` on live non-form nodes, allowing script retention and XSS via attacker-supplied DOM objects",
+      "severity": "low",
+      "vulnerable_versions": "<=3.4.6",
+      "cwe": ["CWE-79"],
+      "cvss": {
+        "score": 0,
+        "vectorString": null
+      }
+    },
+    {
+      "id": 1124237,
+      "url": "https://github.com/advisories/GHSA-76mc-f452-cxcm",
+      "title": "DOMPurify: Hook mutation of `data.allowedTags` / `data.allowedAttributes` permanently pollutes `DEFAULT_ALLOWED_TAGS` / `DEFAULT_ALLOWED_ATTR`",
+      "severity": "moderate",
+      "vulnerable_versions": "<3.4.7",
+      "cwe": ["CWE-501", "CWE-693"],
+      "cvss": {
+        "score": 6.1,
+        "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N"
+      }
+    },
+    {
+      "id": 1240978,
+      "url": "https://github.com/advisories/GHSA-c2j3-45gr-mqc4",
+      "title": "DOMPurify: `CUSTOM_ELEMENT_HANDLING` bypasses `afterSanitizeElements` for allowed custom elements.",
+      "severity": "low",
+      "vulnerable_versions": "<=3.4.11",
+      "cwe": ["CWE-79", "CWE-184", "CWE-693"],
+      "cvss": {
+        "score": 0,
+        "vectorString": null
+      }
+    },
+    {
+      "id": 1138538,
+      "url": "https://github.com/advisories/GHSA-55q2-fjhq-7xh7",
+      "title": "DOMPurify: IN_PLACE hook removal leaves a detached subtree executable, causing XSS",
+      "severity": "moderate",
+      "vulnerable_versions": "<=3.4.12",
+      "cwe": ["CWE-79"],
+      "cvss": {
+        "score": 0,
+        "vectorString": null
+      }
+    }
+  ],
+  "js-yaml": [
+    {
+      "id": 1121860,
+      "url": "https://github.com/advisories/GHSA-h67p-54hq-rp68",
+      "title": "JS-YAML: Quadratic-complexity DoS in merge key handling via repeated aliases",
+      "severity": "moderate",
+      "vulnerable_versions": ">=4.0.0 <=4.1.1",
+      "cwe": ["CWE-407"],
+      "cvss": {
+        "score": 5.3,
+        "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L"
+      }
+    },
+    {
+      "id": 1123911,
+      "url": "https://github.com/advisories/GHSA-52cp-r559-cp3m",
+      "title": "js-yaml: YAML merge-key chains can force quadratic CPU consumption",
+      "severity": "high",
+      "vulnerable_versions": ">=4.0.0 <4.3.0",
+      "cwe": ["CWE-400", "CWE-407"],
+      "cvss": {
+        "score": 7.5,
+        "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+      }
+    },
+    {
+      "id": 1138115,
+      "url": "https://github.com/advisories/GHSA-5p4m-2wfm-xmqj",
+      "title": "JS-YAML: Quadratic CPU consumption in !!omap resolution (3.x and 4.x) — CVE-2026-59870 fix not backported",
+      "severity": "high",
+      "vulnerable_versions": ">=4.0.0 <4.3.1",
+      "cwe": ["CWE-407"],
+      "cvss": {
+        "score": 7.5,
+        "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+      }
+    },
+    {
+      "id": 1193727,
+      "url": "https://github.com/advisories/GHSA-2883-xcg3-v3hh",
+      "title": "js-yaml: maxTotalMergeKeys does not limit CPU use for empty merge sources",
+      "severity": "high",
+      "vulnerable_versions": ">=4.0.0 <4.3.2",
+      "cwe": ["CWE-400", "CWE-407"],
+      "cvss": {
+        "score": 7.5,
+        "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+      }
+    }
+  ],
+  "lodash-es": [
+    {
+      "id": 1115805,
+      "url": "https://github.com/advisories/GHSA-r5fr-rjxr-66jc",
+      "title": "lodash vulnerable to Code Injection via `_.template` imports key names",
+      "severity": "high",
+      "vulnerable_versions": ">=4.0.0 <=4.17.23",
+      "cwe": ["CWE-94"],
+      "cvss": {
+        "score": 8.1,
+        "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H"
+      }
+    },
+    {
+      "id": 1115809,
+      "url": "https://github.com/advisories/GHSA-f23m-r3pf-42rh",
+      "title": "lodash vulnerable to Prototype Pollution via array path bypass in `_.unset` and `_.omit`",
+      "severity": "moderate",
+      "vulnerable_versions": "<=4.17.23",
+      "cwe": ["CWE-1321"],
+      "cvss": {
+        "score": 6.5,
+        "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:L/A:L"
+      }
+    }
+  ]
+}

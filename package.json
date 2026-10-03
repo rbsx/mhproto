@@ -26,7 +26,8 @@
     "format:check": "prettier --check .",
     "check": "npm run format:check && npm test",
     "prepack": "npm run check",
-    "test:browser": "node --test test/browser.mjs"
+    "test:browser": "node --test test/browser.mjs",
+    "verify:vendor": "node scripts/verify-mermaid.mjs && node scripts/verify-mermaid-licenses.mjs"
   },
   "engines": {
     "node": ">=22"

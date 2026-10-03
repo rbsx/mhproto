@@ -20,8 +20,24 @@ The Mermaid bundle is now verified against the official `mermaid@11.16.1` npm
 archive with its deterministic local wrapper. Repeat with
 `node scripts/verify-mermaid.mjs`; hashes and registry integrity are recorded in
 the vendor manifest. Its source map identifies 59 bundled dependency versions.
-The complete bundled license review remains open. An actual tarball consumer
-installation remains to be checked after that gate.
+The bundled license inventory is now complete: 74 package/version entries,
+including 32 matching parser chunks and their nested dependencies, have verified
+archive integrity and retained license texts. Notices are also embedded in the
+renderer for portable HTML exports. Repeat with `npm run verify:vendor`.
+
+A separate live audit of those exact versions found advisories affecting
+DOMPurify 3.4.0, js-yaml 4.1.1 and lodash-es 4.17.23. These include high-severity
+YAML parsing and Lodash advisories. A clean ordinary `npm audit` did not cover the
+vendored code. See `viewer/vendor/bundled-audit.json`; update/rebuild the renderer
+and assess the affected call paths before clearing this release gate.
+A draft `0.7.0` tarball was created and installed into a fresh consumer with only
+runtime dependencies. Its public import, executable CLI, scaffold, both sets of
+five skills, validation, scoped context, structured linked checks, stale evidence,
+snapshot/diff and portable export passed. The installed HTTP viewer and exported
+HTML passed desktop/mobile Chromium checks for diagrams, linked types, comparison
+and offline navigation. The full notice appendix is present in the installed
+package and single-file export. This is a tested draft, not an npm release.
+
 Windows remains unverified. No npm version has been published; `private: true`
 remains enabled. See [publishing steps](publishing.md) for the release sequence.
 

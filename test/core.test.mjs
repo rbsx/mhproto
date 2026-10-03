@@ -208,6 +208,11 @@ test('standalone viewer escapes embedded data and compiles its bundled script', 
   await exportViewer(root, output);
   const html = await readFile(path.join(output, 'viewer.html'), 'utf8');
   assert.ok(html.includes('id="mhproto-model"'));
+  const notices = await readFile(path.join(packageRoot, 'viewer/vendor/NOTICE.txt'), 'utf8');
+  assert.ok(
+    html.includes(notices.trimEnd()),
+    'standalone HTML retains complete third-party notices',
+  );
   assert.ok(!html.includes('</script><script>evil()'));
   assert.ok(html.includes('\\u003c/script>'));
   const embeddedApp = html.match(/<script type="module">([\s\S]*?)<\/script>/)[1];
