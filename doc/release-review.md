@@ -1,8 +1,10 @@
 # Preview release review
 
-Reviewed 2026-10-03. **Prepared version: `0.8.0-preview.0`, for the npm `next` tag.**
+Reviewed and published 2026-10-03. **Released version: `0.8.0-preview.0`, on npm's `next` tag.**
 The previous renderer security gate is cleared by an independently repeatable
-source build with patched dependencies. No npm publication has occurred.
+source build with patched dependencies. The published npm archive matches the
+tested candidate's SHA-512 integrity exactly. A fresh registry installation passed
+the executable CLI and public API import checks.
 
 ## Changes that cleared the gate
 
@@ -47,12 +49,17 @@ GitHub runs the Linux/macOS, Node 22/24 matrix, audits, renderer verification,
 desktop/mobile browser suite and packed-consumer smoke for the release commit.
 Require all jobs to pass before publication.
 
-## Remaining publication steps and limits
+## Published release and limits
 
-This machine has no npm login (`npm whoami` returned ENEEDAUTH). The `mhproto` name
-returned E404, which is not a reservation or ownership guarantee. Publication
-requires the package owner's npm authentication, approval of the tested archive,
-and a final current audit/name check. Follow [the publishing steps](publishing.md).
+The published package is [mhproto 0.8.0-preview.0](https://www.npmjs.com/package/mhproto/v/0.8.0-preview.0).
+Its source commit is `1c3ea3f64f9afaf9ce565e3d09ba881881741998`, with
+[all hosted release checks passing](https://github.com/rbsx/mhproto/actions/runs/37113338398).
+The GitHub prerelease uses that exact commit and retains the tested archive and
+preparation manifest. The manifest records the state when the archive was prepared;
+its `published: false` field is historical, not the current registry status.
+Both `next` and `latest` currently resolve to this development preview. Documented
+installation uses `mhproto@next`. See [the publishing steps](publishing.md) for
+future releases and tag policy.
 
 Node 22 and 24 on Linux/macOS are the tested targets. Windows and browsers other
 than Chromium remain unverified. Mermaid 12's browser targets are Safari/iOS 17.4,
@@ -62,7 +69,9 @@ Schema subset, evidence does not track external service or tool-version changes,
 and multiple viewer processes do not coordinate attachment writes. Diff reports
 contract changes, not a breaking-change classification.
 
-The website is maintained in a separate private repository. Its npm installation
-copy must change only after the package becomes available. The
+The website is maintained in a separate private repository and documents npm
+installation. The released archive and tag retain their original bytes; README
+and documentation corrections on the main branch enter the next package version.
+The
 [dated original review](release-review-2026-10-02.md) preserves earlier findings
 and historical limitations; its old release gates are superseded here.

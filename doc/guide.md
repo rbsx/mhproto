@@ -4,20 +4,13 @@ Detailed usage and reference documentation for the [project website](https://mhp
 
 ## Start locally
 
-This is a development preview, not an npm registry release. Node 22+ is required.
-The hosted CI matrix covers Node 22/24 on Linux and macOS and [has passed](https://github.com/rbsx/mhproto/actions/runs/37059758163). Windows is unverified.
+The development preview is available on npm as `mhproto@next`. Node 22+ is required.
+The release CI matrix covers Node 22/24 on Linux and macOS and [has passed](https://github.com/rbsx/mhproto/actions/runs/37113338398). Windows is unverified.
 
-From a checkout of this repository:
-
-```sh
-npm ci
-npm run check
-```
-
-In your application, install the checkout and create a draft contract:
+From your application's directory, install the preview and create a draft contract:
 
 ```sh
-npm install --save-dev /path/to/mhproto
+npm install -D mhproto@next
 npx mhproto init --agent codex
 npx mhproto check
 npx mhproto snapshot
@@ -121,10 +114,10 @@ The comparison is one pure module shared by CLI, server and browser. It covers f
 
 ## Release status and boundaries
 
-The `0.8.0-preview.0` release candidate is prepared for npm's `next` channel;
-publication is pending. Its renderer is rebuilt with patched dependencies and
+Version `0.8.0-preview.0` is published on npm's `next` channel as a development
+preview. Its renderer is rebuilt with patched dependencies and
 verified notices. See [the release review](release-review.md) for evidence and
-platform limits, and [publishing steps](publishing.md) for the final registry step.
+platform limits, and [publishing steps](publishing.md) for the maintainer release process.
 
 The validator is intentionally bounded: JSON Schema 2020-12 payloads, local JSON
 pointer references and linked metadata. It does not implement the whole OpenAPI

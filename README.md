@@ -21,19 +21,11 @@ Everything lives in your repository. No hosted service or AI account is required
 
 ## Try it locally
 
-Development preview. Requires Node 22 or newer; the package is not published to npm.
+Development preview, available on npm. Requires Node 22 or newer.
+From your application's directory:
 
 ```sh
-git clone https://github.com/rbsx/mhproto.git
-cd mhproto
-npm ci
-npm run check
-```
-
-Then, from your application's directory:
-
-```sh
-npm install --save-dev /path/to/mhproto
+npm install -D mhproto@next
 npx mhproto init --agent codex
 npx mhproto view
 ```

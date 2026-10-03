@@ -1,6 +1,6 @@
 # MHProto 0.8.0-preview.0
 
-Prepared development preview for the npm `next` channel. Publication is pending.
+Published 2026-10-03 as a development preview on the npm `next` channel.
 
 MHProto keeps behaviour, API contracts, examples and verification checks in your
 repository, with a shared browser view for humans and scoped context for agents.
@@ -20,4 +20,4 @@ Project overview and demo: https://mhproto.dev/
 Documentation: https://mhproto.dev/docs/
 Source: https://github.com/rbsx/mhproto
 
-After npm publication, install explicitly with `npm install -D mhproto@next`.
+Install explicitly with `npm install -D mhproto@next`.
