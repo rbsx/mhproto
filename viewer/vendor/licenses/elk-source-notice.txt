@@ -1,0 +1,11 @@
+ELK source availability (EPL-2.0)
+
+Copyright (c) 2017 Kiel University and others.
+ELK and elkjs are made available under the Eclipse Public License 2.0.
+No changes were made to the supplied elkjs implementation; esbuild bundles/minifies it.
+JavaScript wrapper and build source for elkjs 0.9.3:
+https://github.com/kieler/elkjs/tree/a8304cf79fde75bc2ab1a89d28320f53f8637436
+ELK Java algorithm sources and tagged releases:
+https://github.com/eclipse/elk
+Build instructions: the elkjs source README and build.gradle at the pinned commit.
+The EPL-2.0 terms are retained in licenses/elkjs-0.9.3.txt.

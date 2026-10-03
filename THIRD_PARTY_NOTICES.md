@@ -1,38 +1,40 @@
 # Third-party software
 
-MHProto's own source is MIT-licensed; see LICENSE.
+MHProto's own source is MIT-licensed; see LICENSE. Third-party components retain
+their respective licenses.
 
 ## Offline Mermaid viewer
 
-The viewer includes Mermaid 11.16.1 and its compiled dependencies. Their complete
-retained license and notice texts are in `viewer/vendor/NOTICE.txt`, with separate
-original texts in `viewer/vendor/licenses/`. The same notice appendix is embedded
-in the browser bundle, so standalone HTML exports retain these notices.
+The viewer includes a source rebuild of Mermaid 12.1.0 with patched, locked
+browser dependencies. Complete retained notices are in `viewer/vendor/NOTICE.txt`,
+with original texts in `viewer/vendor/licenses/`. The appendix is embedded in the
+renderer, so standalone HTML exports retain it.
 
-`viewer/vendor/license-inventory.json` records 74 package/version entries, their
-license declarations, retained notice sources, archive integrity and notice hashes.
-The inventory follows both Mermaid's source map and the parser's nested source
-maps, including flattened vscode-uri/path-browserify sources and the original
-Node.js path module attribution. Embedded upstream attributions are preserved in
-`viewer/vendor/embedded-notices.txt` and the bundle itself.
+`viewer/vendor/license-inventory.json` records 79 package/version entries with
+archive integrity, notice sources and hashes. Coverage follows esbuild inputs and
+32 compiled parser chunks, including flattened vscode-uri/path-browserify sources.
+Embedded upstream and original Node.js path module attributions are retained.
 
-The recorded licenses are MIT, ISC, BSD-3-Clause and Apache-2.0. DOMPurify offers
-MPL-2.0 OR Apache-2.0; this distribution selects its Apache-2.0 alternative while
-retaining the full original dual-license notice. Khroma's MIT license is identified
-from its license file because its package metadata omits the license field.
+Licenses include MIT, ISC, BSD-3-Clause, Apache-2.0, EPL-2.0 and Unlicense.
+DOMPurify offers MPL-2.0 OR Apache-2.0; this distribution selects Apache-2.0 while
+retaining its complete original dual-license notice. Khroma's MIT terms come from
+its license file; Fastdom's MIT terms come from its README.
 
-Mermaid's executable body is verified against the official npm archive. MHProto
-adds a private namespace wrapper and the notice appendix; it does not modify the
-bundled dependency code. No independent upstream source rebuild was performed.
-See `viewer/vendor/README.md` for repeatable verification commands.
+ELK/elkjs is distributed under EPL-2.0. Copyright (c) 2017 Kiel University and
+others. No changes were made to the supplied elkjs implementation; it is bundled
+and minified by esbuild. JavaScript wrapper/build source for elkjs 0.9.3 is available
+at https://github.com/kieler/elkjs/tree/a8304cf79fde75bc2ab1a89d28320f53f8637436;
+ELK's Java algorithm source and tagged releases are at https://github.com/eclipse/elk.
+The original EPL-2.0 text and source availability notice travel with the bundle.
 
-The completed notice review does not clear the separate dependency-security gate:
-`viewer/vendor/bundled-audit.json` records current advisories matching bundled
-DOMPurify, js-yaml and Lodash versions. npm publication remains disabled pending
-that work; see doc/release-review.md.
+Mermaid's runtime source and official build plugins are unchanged. MHProto uses
+its own committed dependency lock, adds a namespace wrapper and appends notices.
+Repeat the clean source rebuild and original-archive checks with
+`npm run verify:vendor`; repeat the separate bundled security audit with
+`npm run audit:vendor`. See `viewer/vendor/README.md`.
 
 ## Separately installed dependencies
 
-Runtime npm dependencies (Ajv, ajv-formats and YAML) are installed separately by
-npm, with their own licenses. Development dependencies are not bundled into the
-published runtime package.
+Runtime npm dependencies (Ajv, ajv-formats and YAML) are installed separately by npm
+with their own licenses. Development and renderer build dependencies are excluded
+from the published runtime package.

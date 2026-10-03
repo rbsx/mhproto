@@ -39,6 +39,12 @@ jobs:
       - name: Verify vendored renderer provenance and licenses
         if: ${{ !cancelled() }}
         run: npm run verify:vendor
+      - name: Audit compiled renderer dependencies
+        if: ${{ !cancelled() }}
+        run: npm run audit:vendor > bundled-audit.json
+      - name: Audit renderer build dependencies
+        if: ${{ !cancelled() }}
+        run: npm ci --prefix tools/mermaid --ignore-scripts && npm audit --prefix tools/mermaid --json > build-audit.json
       - uses: actions/upload-artifact@v5
         if: ${{ !cancelled() }}
         with:
@@ -46,6 +52,8 @@ jobs:
           path: |
             audit.json
             signatures.json
+            bundled-audit.json
+            build-audit.json
           retention-days: 14
   browser:
     runs-on: ubuntu-latest
@@ -61,10 +69,15 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser
+      - name: Install and exercise the packed release
+        run: |
+          mkdir -p /tmp/mhproto-release
+          npm pack --ignore-scripts --pack-destination /tmp/mhproto-release
+          node test/packed.mjs /tmp/mhproto-release/mhproto-*.tgz
       - uses: actions/upload-artifact@v5
         if: ${{ !cancelled() }}
         with:
           name: browser-review
-          path: test-results/browser/
+          path: test-results/
           if-no-files-found: warn
           retention-days: 14

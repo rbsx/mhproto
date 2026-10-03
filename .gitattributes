@@ -1,2 +1,2 @@
 # Preserve exact vendored bytes and original notice line endings for hash verification.
-viewer/vendor/** -text
+viewer/vendor/** -text -whitespace

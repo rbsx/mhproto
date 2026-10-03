@@ -1,6 +1,6 @@
 {
   "name": "mhproto",
-  "version": "0.7.0",
+  "version": "0.8.0-preview.0",
   "description": "Machine–Human Protocol: a shared contract workspace for humans and coding agents",
   "type": "module",
   "bin": {
@@ -27,7 +27,10 @@
     "check": "npm run format:check && npm test",
     "prepack": "npm run check",
     "test:browser": "node --test test/browser.mjs",
-    "verify:vendor": "node scripts/verify-mermaid.mjs && node scripts/verify-mermaid-licenses.mjs"
+    "verify:vendor": "node scripts/verify-mermaid.mjs && node scripts/verify-mermaid-licenses.mjs",
+    "audit:vendor": "node scripts/audit-mermaid.mjs",
+    "test:packed": "node test/packed.mjs",
+    "release:prepare": "node scripts/prepare-release.mjs"
   },
   "engines": {
     "node": ">=22"
@@ -51,12 +54,16 @@
     "agents",
     "spec-driven-development"
   ],
-  "private": true,
   "repository": {
     "type": "git",
     "url": "git+https://github.com/rbsx/mhproto.git"
   },
   "bugs": {
     "url": "https://github.com/rbsx/mhproto/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "next",
+    "registry": "https://registry.npmjs.org/"
   }
 }

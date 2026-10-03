@@ -24,8 +24,10 @@ attachment ownership and persistence, iteration diffs and offline save/reload.
 It writes screenshots and console diagnostics to `test-results/browser/`. Review
 the screenshots for layout; automated assertions do not replace visual judgment.
 GitHub CI uploads these artifacts along with dependency-audit and registry-signature
-reports. The copied Mermaid bundle still requires a verified reproducible build
-and licence inventory; npm signatures do not authenticate that local bundle.
+reports. The offline Mermaid renderer is source-built with a separate locked dependency
+set. CI verifies a clean byte-identical rebuild, all retained licenses, the
+exact bundled-version advisory audit and the build dependency audit. See
+[the renderer notes](viewer/vendor/README.md).
 
 Keep changes scoped. Add regression tests for observable bugs. Preserve the
 single-owner attachment policy and the distinction between failed, stale and
@@ -51,7 +53,8 @@ the browser. Standalone export inlines that module, the viewer and Mermaid.
 
 ## Before a public release
 
-Read [the publishing steps](doc/publishing.md) and doc/release-review.md. Keep `private: true` until its release gates pass.
+Read [the publishing steps](doc/publishing.md) and doc/release-review.md. Run `npm run release:prepare` from a clean committed checkout to produce and test
+the preview archive. Preparation does not publish it.
 `npm pack --dry-run --json --ignore-scripts` inspects the planned file list without
 creating an archive. `npm pack` runs the prepack check before creating a package.
 Verify a clean installation of the resulting tarball in a separate project before

@@ -73,7 +73,7 @@ Browser editing of normative contract text, type generation, remote schema refs 
 
 ## Develop
 
-Node 22+. `npm ci`, `npm run check`, `npm run format`. See CONTRIBUTING.md and doc/release-review.md. Package creation is held until the release gates pass. The CLI and viewer run directly from source; no build step is needed. Dependencies: yaml, Ajv, ajv-formats. The viewer uses platform DOM APIs and escapes source content.
+Node 22+. `npm ci`, `npm run check`, `npm run format`. See CONTRIBUTING.md and doc/release-review.md. The preview archive is prepared with `npm run release:prepare`; registry publication is a separate step. The CLI and viewer run directly from source; no build step is needed. Dependencies: yaml, Ajv, ajv-formats. The viewer uses platform DOM APIs and escapes source content.
 
 ## Visual references
 
@@ -121,11 +121,10 @@ The comparison is one pure module shared by CLI, server and browser. It covers f
 
 ## Release status and boundaries
 
-This preview is held with `private: true`. Public release still requires a live
-dependency audit, upstream provenance and license checks for the reused Mermaid
-bundle, a clean tarball installation and painted browser QA. The
-existing downloadable 0.7.0 prototype predates this review and is not a reviewed
-release.
+The `0.8.0-preview.0` release candidate is prepared for npm's `next` channel;
+publication is pending. Its renderer is rebuilt with patched dependencies and
+verified notices. See [the release review](release-review.md) for evidence and
+platform limits, and [publishing steps](publishing.md) for the final registry step.
 
 The validator is intentionally bounded: JSON Schema 2020-12 payloads, local JSON
 pointer references and linked metadata. It does not implement the whole OpenAPI

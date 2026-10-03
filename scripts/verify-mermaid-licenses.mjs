@@ -65,25 +65,16 @@ try {
     }),
   );
 
-  // Follow the compiled parser chunks embedded by Mermaid rather than resolving new dependencies.
-  const mermaid = archiveCache.get('mermaid@11.16.1');
-  const parser = archiveCache.get('@mermaid-js/parser@1.2.0');
-  const outer = JSON.parse(
-    (await extract(mermaid, 'package/dist/mermaid.min.js.map')).toString('utf8'),
-  );
-  const outerSources = new Map(outer.sources.map((source, i) => [source, outer.sourcesContent[i]]));
+  // The source-build verifier proves these exact chunks were input to esbuild.
+  const evidence = JSON.parse(await readFile(path.join(vendor, 'build-evidence.json')));
+  const parser = archiveCache.get('@mermaid-js/parser@2.0.1');
   const nested = new Set();
   const flattened = new Map();
-  assert.deepEqual(
-    inventory.parserEvidence.matchedSourceMaps.map((entry) => entry.source).sort(),
-    outer.sources.filter((source) => source.startsWith('../../parser/dist/')).sort(),
-  );
-  for (const entry of inventory.parserEvidence.matchedSourceMaps) {
-    const source = await extract(parser, entry.archivePath);
-    assert.equal(hash(source), entry.sourceSha256, entry.archivePath);
-    assert.equal(source.toString('utf8'), outerSources.get(entry.source), 'Parser chunk identity');
-    const map = await extract(parser, entry.mapPath);
-    assert.equal(hash(map), entry.mapSha256, entry.mapPath);
+  for (const entry of evidence.parserChunks) {
+    const chunk = await extract(parser, 'package/' + entry.file);
+    assert.equal(hash(chunk), entry.sha256, entry.file);
+    const map = await extract(parser, 'package/' + entry.file + '.map');
+    assert.equal(hash(map), entry.mapSha256, entry.file + '.map');
     const parsed = JSON.parse(map.toString('utf8'));
     for (const [i, sourcePath] of parsed.sources.entries()) {
       const match = sourcePath.match(/\/\.pnpm\/([^/]+)\/node_modules\//);
@@ -91,7 +82,9 @@ try {
       if (sourcePath.startsWith('webpack://')) flattened.set(sourcePath, parsed.sourcesContent[i]);
     }
   }
-  assert.deepEqual([...nested].sort(), inventory.parserEvidence.additionalPnpmPackages);
+  assert.ok(evidence.parserChunks.length > 0, 'Recursive parser inspection');
+  for (const spec of nested)
+    assert.ok(evidence.packages.includes(spec), 'Nested package coverage: ' + spec);
   const uriMap = JSON.parse(
     (await extract(archiveCache.get('vscode-uri@3.1.0'), 'package/lib/umd/index.js.map')).toString(
       'utf8',
@@ -110,16 +103,9 @@ try {
     (await extract(archiveCache.get('path-browserify@1.0.1'), 'package/index.js')).toString('utf8'),
     'path-browserify identity',
   );
-  const covered = new Set([
-    ...direct.packages,
-    ...nested,
-    'mermaid@11.16.1',
-    '@mermaid-js/parser@1.2.0',
-    'vscode-uri@3.1.0',
-    'path-browserify@1.0.1',
-  ]);
+  assert.deepEqual(direct.packages, evidence.packages, 'Recorded bundle package inventory');
   assert.deepEqual(
-    [...covered].sort(),
+    evidence.packages,
     inventory.packages.map(key).sort(),
     'Complete package coverage',
   );

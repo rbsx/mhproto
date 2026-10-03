@@ -1,127 +1,68 @@
-# Pre-release code review
+# Preview release review
 
-Reviewed 2026-10-02. **Decision: keep the package private; do not create or publish a new npm release yet.** The implementation is materially safer and more predictable after the fixes below. Remaining release gates are concrete verification work, not a request for a broad rewrite.
+Reviewed 2026-10-03. **Prepared version: `0.8.0-preview.0`, for the npm `next` tag.**
+The previous renderer security gate is cleared by an independently repeatable
+source build with patched dependencies. No npm publication has occurred.
 
-## Status update: 2026-10-03
+## Changes that cleared the gate
 
-The original findings and local-only evidence below are retained as a dated review.
-Subsequent work cleared these gates:
+The renderer is rebuilt from Mermaid 12.1.0 at upstream commit
+`21f72f07ea22c0af48a3149c550654e80d8e40cb`. The verified source archive,
+unmodified upstream schema/Jison plugins and committed dependency lock reproduce
+the vendored executable bytes. DOMPurify is 3.4.16, js-yaml is 4.3.2, and all
+bundled Lodash is 4.18.1. The new parser uses Chevrotain 13.2.0 and Langium 4.4.0;
+the old vulnerable nested Lodash dependency is gone.
 
-- The hosted Linux/macOS, Node 22/24 matrix, dependency audit/signature job and
-  desktop/mobile Chromium suite passed for
-  [commit 7d75f8b](https://github.com/rbsx/mhproto/actions/runs/37068214828).
-- Live npm audits reported no known vulnerabilities in the locked dependency tree.
-  This does not authenticate the copied Mermaid bundle.
-- The library is public at https://github.com/rbsx/mhproto, and the homepage,
-  documentation and interactive demo are live at https://mhproto.dev.
-- Desktop/mobile website flows and offline demo save/reload passed in Chromium.
+The exact-version registry audit reports no known advisories for the 79 recorded
+renderer package versions, including dependencies inside 32 compiled parser
+chunks. Both the library's dependency tree and the renderer build dependency tree
+audit clean. Registry signatures and available provenance for the library's
+installed dependencies verify. Recheck these time-sensitive results before
+publication; an audit is not a penetration test.
 
-The Mermaid bundle is now verified against the official `mermaid@11.16.1` npm
-archive with its deterministic local wrapper. Repeat with
-`node scripts/verify-mermaid.mjs`; hashes and registry integrity are recorded in
-the vendor manifest. Its source map identifies 59 bundled dependency versions.
-The bundled license inventory is now complete: 74 package/version entries,
-including 32 matching parser chunks and their nested dependencies, have verified
-archive integrity and retained license texts. Notices are also embedded in the
-renderer for portable HTML exports. Repeat with `npm run verify:vendor`.
+The retained license inventory covers those 79 entries. Original archive bytes,
+parser source-map identities and flattened vscode-uri/path-browserify sources
+verify. Full notices remain embedded in the renderer for offline exports. ELK's
+EPL-2.0 text, copyright and source availability links are included. DOMPurify's
+Apache-2.0 alternative is selected. See [third-party notices](../THIRD_PARTY_NOTICES.md)
+and [the renderer manifest](../viewer/vendor/manifest.json).
 
-A separate live audit of those exact versions found advisories affecting
-DOMPurify 3.4.0, js-yaml 4.1.1 and lodash-es 4.17.23. These include high-severity
-YAML parsing and Lodash advisories. A clean ordinary `npm audit` did not cover the
-vendored code. See `viewer/vendor/bundled-audit.json`; update/rebuild the renderer
-and assess the affected call paths before clearing this release gate.
-A draft `0.7.0` tarball was created and installed into a fresh consumer with only
-runtime dependencies. Its public import, executable CLI, scaffold, both sets of
-five skills, validation, scoped context, structured linked checks, stale evidence,
-snapshot/diff and portable export passed. The installed HTTP viewer and exported
-HTML passed desktop/mobile Chromium checks for diagrams, linked types, comparison
-and offline navigation. The full notice appendix is present in the installed
-package and single-file export. This is a tested draft, not an npm release.
+## Required candidate evidence
 
-Windows remains unverified. No npm version has been published; `private: true`
-remains enabled. See [publishing steps](publishing.md) for the release sequence.
+`npm run release:prepare` requires a clean committed checkout, then runs:
 
-## Scope and method
+- Formatting and all 58 tests, including actual flow/state/sequence SVG rendering.
+- Library advisory/signature checks, a clean renderer rebuild, archive license
+  verification, the exact bundled-version audit and build dependency audit.
+- Desktop/mobile Chromium flows over HTTP and offline save/reload.
+- A fresh install of the exact tarball: public import, executable CLI, scaffold,
+  ten Codex/Claude skill copies, validation, scoped context, linked checks,
+  evidence freshness, snapshot/diff and portable export.
+- Installed-package HTTP and offline browser flows with diagrams and linked types.
 
-Reviewed the CLI, file loading and writes, metadata validation, OpenAPI/schema handling, scoped agent context, verification evidence, HTTP handler, portable exports, visual attachments, type navigation, comparison module, five bundled skills, dependency lockfile and planned npm contents. Checked the isolated Impostor pilot against the revised implementation. The original application was not edited.
+It writes `artifacts/release/mhproto-0.8.0-preview.0.tgz` and a manifest containing
+its source commit, SHA-256, SHA-512 integrity and complete packed file list.
+Website source, test fixtures, build tooling and credentials are excluded.
+GitHub runs the Linux/macOS, Node 22/24 matrix, audits, renderer verification,
+desktop/mobile browser suite and packed-consumer smoke for the release commit.
+Require all jobs to pass before publication.
 
-Used source inspection, actual CLI subprocesses, regression tests, JSDOM, the vendored Mermaid runtime, a fresh locked dependency install and an isolated planned-package layout. This is an engineering review, not a penetration test or a certification of the entire OpenAPI standard. Local checks ran on macOS with Node 24.18.1. The configured Node 22/24, Linux/macOS CI matrix has not run on a hosted repository.
+## Remaining publication steps and limits
 
-## Findings fixed
+This machine has no npm login (`npm whoami` returned ENEEDAUTH). The `mhproto` name
+returned E404, which is not a reservation or ownership guarantee. Publication
+requires the package owner's npm authentication, approval of the tested archive,
+and a final current audit/name check. Follow [the publishing steps](publishing.md).
 
-Severity indicates the effect on MHProto's advertised guarantees. High means incorrect verification/contract acceptance or an unintended write/disclosure boundary; medium means incorrect output, comparison or workflow behaviour. It does not assert remote exploitability.
+Node 22 and 24 on Linux/macOS are the tested targets. Windows and browsers other
+than Chromium remain unverified. Mermaid 12's browser targets are Safari/iOS 17.4,
+Chrome/Edge 121 and Firefox 123 or newer. The package remains a development preview:
+check results are evidence, the validator supports a documented OpenAPI/JSON
+Schema subset, evidence does not track external service or tool-version changes,
+and multiple viewer processes do not coordinate attachment writes. Diff reports
+contract changes, not a breaking-change classification.
 
-| Priority        | Finding and prior consequence                                                                                                                                 | Change and evidence                                                                                                                                                                                                                                                                                           |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| High            | Node TODO tests could count as passing even though Node permits them without a failing exit code. Nonterminal reporter events could satisfy an expected name. | Require completed pass/fail events; reject TODO, skipped, missing and failing tests. Added real TODO and fabricated-event regressions, plus UTF-8 split handling.                                                                                                                                             |
-| High            | Unbounded or malformed structured reporter output could undermine verification and consume excessive memory.                                                  | Bound structured output to 1 MB, reject malformed/oversized streams and stop the command on overflow. Retain bounded ordinary output. Verification still runs trusted commands with inherited environment; it is not a sandbox.                                                                               |
-| High            | Boolean `false` schemas were treated as absent/empty; invalid inline schemas without examples could escape validation.                                        | Preserve boolean schemas; compile declared inline schemas even without payloads. Validate named media examples. Cache compiled schemas. Regressions cover rejection and display/context preservation.                                                                                                         |
-| High            | Evidence could remain fresh after configuration, system rules or declared test-file changes.                                                                  | Include those inputs in the revision digest alongside capability and tracked source files. Bound directory traversal through symlink cycles. Regression mutates each missing input.                                                                                                                           |
-| High            | Several generated writes lacked the same real-path containment as reads and could follow escaping symlinks.                                                   | Centralize contained writes and unique atomic replacement. Preflight CLI destinations; reject existing init/skill destinations and root-directory exports, including root aliases. Regressions prove outside files are preserved. This is not protection against a hostile concurrent filesystem mutator.     |
-| High            | Shareable exports contained captured process output, executed command records and the generated machine root path.                                            | Export an evidence-summary whitelist. Keep status, timing and observed test names; omit captured logs/errors and generated paths. Validate and prepare all output before replacing files. Authored commands/environment values, contracts, examples and attachments remain and require review before sharing. |
-| Medium          | Local OpenAPI object references and path-level parameter overrides were not consistently resolved.                                                            | Resolve local path/parameter/request-body/response refs, reject cycles and duplicate parameters, apply operation overrides by name/location, decode JSON pointer names and include TRACE. Regression verifies context and payload validation.                                                                 |
-| Medium          | Response example validation mishandled declared status ranges; metadata errors could become incidental runtime failures.                                      | Match explicit status, `2XX` and default responses. Validate MHProto metadata with source-file diagnostics, reject unknown fields and allow `x-*` extensions. Preserve the pilot's existing check description field.                                                                                          |
-| Medium          | Viewer nullability/false schemas and unsafe imported design links could be misrepresented.                                                                    | Preserve nullable object type arrays and `never` schemas. Actionable design links require HTTPS without credentials. Imported preview HTML is read as marked JSON without constructing an HTML document or executing scripts.                                                                                 |
-| Medium          | Diff normalization could ignore payload array order when a property happened to be named `rules`; path metadata could be missed.                              | Distinguish literal payloads from unordered reference sets and compare path-level metadata. Fenced rule examples remain prose rather than invented normative rules. Added regressions for each case.                                                                                                          |
-| Medium          | Missing CLI values, unsupported flags and invalid skill agents could fail after partial scaffolding.                                                          | Validate command-specific options and preflight destinations; help never performs work. Added CLI subprocess regressions.                                                                                                                                                                                     |
-| Release hygiene | License declaration lacked a top-level license file; source style, contributor guidance and dependency provenance were incomplete.                            | Added MIT LICENSE, third-party notices, contributor guide, formatter/check scripts, CI configuration and vendor hash/provenance manifest. Raised the YAML minimum to 2.8.3. Kept `private: true`.                                                                                                             |
-
-The YAML minimum follows the [maintainer's security advisory](https://github.com/eemeli/yaml/security/advisories/GHSA-48c2-rrv3-qjmp), which identifies 2.8.3 as the fix for deeply nested input causing a stack overflow. The locked install uses YAML 2.9.1. This specific fix does not establish that all dependencies are free of known vulnerabilities.
-
-## Validation results
-
-- **58/58 framework tests pass**, with no skips or TODOs. The previous suite had 44 tests; 14 additional regressions cover the review findings.
-- Formatting passes. Tests clean up their temporary projects.
-- **23/23 linked Impostor checks pass** with the revised verifier. The final contract check reports **0 errors and 12 warnings** for rules without linked executable checks. Those gaps remain visible; passing linked checks do not imply full behavioural coverage.
-- Pilot tests exercise application services and HTTP handlers in process with a request/response double, an in-memory database and stub witnesses. They do not prove socket transport, deployed behaviour or live model quality. No paid model evaluation was run.
-- A fresh `npm ci --offline --ignore-scripts` installs all 47 locked dependencies into an isolated source checkout. Offline installation verifies lock/cache consistency, not dependency security.
-- The isolated source checkout also passes formatting and all 58 tests.
-- Planned package-layout smoke verifies the public import, executable CLI, scaffold, five skill installs, validation, scoped context, snapshot/diff and portable viewer export from staged npm-listed files. It uses an isolated dependency install; it is not an installation from an npm tarball.
-- `npm pack --dry-run --json --ignore-scripts` inspects the planned files without creating an archive. No application copy, local evidence, screenshots, test fixtures, node_modules or credentials are included. CLI executable mode, skills, viewer assets and licenses are included.
-- The planned package now contains 33 files including the separate guide, approximately 1.05 MB packed and 3.80 MB unpacked. The reused Mermaid bundle accounts for about 94% of the unpacked bytes; a reproducible renderer build is the main dependency/size decision.
-- Standalone exports execute their shared comparison in JSDOM with network access disabled; Mermaid examples render with the actual local bundle. These checks do not establish painted layout, keyboard behaviour in a real browser or real HTTP transport. Local socket/browser preview was unavailable in this environment.
-- The final exported Impostor preview passes an offline DOM smoke with six endpoints, a linked type page, rendered Mermaid SVG and 23 fresh passing evidence summaries. It performs no fetch; SVG text measurement is approximate.
-
-## Release gates still open
-
-| Gate                                     | Required evidence                                                                                                                                                                                                                                                                                                |
-| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Live dependency audit                    | Run a current audit and inspect relevant advisories for runtime dependencies and the vendored renderer. The attempted npm audit failed because registry DNS was unavailable; it did not return a clean audit.                                                                                                    |
-| Mermaid provenance and licenses          | Obtain an official upstream artifact or reproducible build; verify the bundle identity and complete transitive license inventory. The reused bundle's claimed version is 11.16.1, but that claim is **not authenticated**. Its recorded SHA-256 identifies the local bytes only. Embedded notices are preserved. |
-| Supported runtimes and real viewer smoke | Run the configured hosted Linux/macOS, Node 22/24 matrix. Test actual HTTP transport and review desktop/mobile pixels, keyboard navigation, attachment ownership, type pages and offline import/export in real browsers. Windows remains unverified.                                                             |
-| Actual package installation              | After the preceding gates, create a tarball, install it into a clean consumer and repeat the CLI/import/offline viewer smoke. Review final packed contents. The older downloadable 0.7.0 prototype predates this review and is not a reviewed release.                                                           |
-| Public project metadata                  | Choose the public repository and add accurate repository/issue links; verify npm package/scope ownership and the Cloudflare homepage setup. Remove `private: true` only as part of the reviewed release. Nothing was published or deployed by this review.                                                       |
-
-## Maintainability and declared limits
-
-Backend responsibilities are now separated into metadata validation, contained paths, contract handling, context, verification, visuals and serving. Comparison stays a single pure module shared by Node and the browser. Attachment actions retain one owner; fields render types and expansion only.
-
-The viewer remains a large DOM module. Before adding another major flow, separate type indexing, rendering and attachment/diff controllers behind the existing observable tests. A framework migration or comprehensive rewrite is not necessary for the current preview.
-
-The contract validator implements a documented subset of OpenAPI 3.1 and JSON Schema 2020-12 with local references. Viewer signatures primarily handle application/json. Check success is evidence, not proof; trusted commands can forge their own output. Evidence tracks files, not tool upgrades or external environment/service state. Separate viewer processes do not coordinate attachment writes. Diff is a contract delta, not breaking-change classification; unchanged visual metadata does not detect changed asset bytes. Scoped context reduces supplied material but does not guarantee billed token savings.
-
-Treat these as documented preview boundaries. Do not hide them behind an expansive “fully validated” claim.
-
-## Release-check preparation after the documentation move
-
-The concise README and separate guide are preserved. Repository/issue metadata now
-points to rbsx/mhproto. CI has additional dependency advisory/signature checks and a
-desktop/mobile Chromium flow suite using pinned Playwright 1.63.0. Browser artifacts
-include screenshots and console diagnostics; tests cover actual HTTP, navigation,
-type expansion/backlinks, attachment ownership/persistence, diff details and offline
-preview save/reload without external requests. These tests use a synthetic contract,
-not production data or live model calls.
-
-The preparation has not cleared those gates. GitHub/npm DNS is unavailable in this
-execution environment, so the new jobs cannot be pushed or inspected here, and the
-real-browser suite cannot run under the local socket/browser restrictions. The
-existing 58-test suite still passes. Browser syntax, fixture contract validity and
-the new locked dependency install are checked separately; none is reported as a
-successful real-browser run. Mermaid provenance/licences and actual tarball
-installation remain open. No package was created or published.
-
-The updated 49-dependency lock installs successfully from the offline cache into
-an isolated checkout, and that checkout passes formatting and all 58 tests. The
-browser fixture validates with no contract errors and produces the intended
-linked-type diff. Planned npm contents exclude the browser fixture, browser suite
-and screenshots. Offline installation does not clear the live audit/signature gate.
+The website is maintained in a separate private repository. Its npm installation
+copy must change only after the package becomes available. The
+[dated original review](release-review-2026-10-02.md) preserves earlier findings
+and historical limitations; its old release gates are superseded here.

@@ -39,7 +39,7 @@ White background, near-black text, neutral separators. Blue links and purple vis
 - A broken diagram retains its source and does not break navigation.
 - Responsive layout stacks request/response objects on narrow screens.
 
-DOM tests cover navigation and actual Mermaid SVG rendering using simulated text measurements. Visual browser QA remains blocked by this session’s file/localhost restrictions.
+DOM tests cover navigation and actual Mermaid SVG rendering using simulated text measurements. Desktop/mobile Chromium release flows now cover HTTP navigation and offline export/save/reload; non-Chromium browser flows remain unverified.
 
 ## Visual attachment flow
 
