@@ -2,9 +2,9 @@
 
 # MHProto
 
-**Describe a feature's behaviour, API and checks in your repo.<br>Review it in a browser. Give your coding agent exactly the part it needs.**
+**Put the contract first. See what a feature does, its API and its checks before agents build it,<br>and keep it visible as the code changes.**
 
-For developers using Claude Code, Codex and other coding agents on existing projects.
+For teams building with Claude Code, Codex and other coding agents, especially full-stack features where frontend and backend share an API.
 
 [![npm (next)](https://img.shields.io/npm/v/mhproto/next?label=npm%40next&color=cb3837)](https://www.npmjs.com/package/mhproto)
 [![CI](https://github.com/rbsx/mhproto/actions/workflows/check.yml/badge.svg)](https://github.com/rbsx/mhproto/actions/workflows/check.yml)
@@ -18,12 +18,13 @@ For developers using Claude Code, Codex and other coding agents on existing proj
 
 ## What you get
 
-- **Describe:** numbered rules, your OpenAPI 3.1, examples and checks as plain files, linked by rule ID.
-- **Review:** linked pages for every feature, endpoint and type, plus what changed since the last snapshot.
-- **Hand off:** your agent gets one endpoint's exact rules, types, errors and check status.
-- **Verify:** run the linked tests and see which checks pass, fail or are stale, and which rules have none.
+- **See it:** every feature as linked pages: behaviour, endpoints, types, rules and examples. Product, design, frontend and backend read the same thing.
+- **Change it early:** snapshot the contract, edit it, and review what changed before any code moves.
+- **Keep it true:** checks link tests to rules, so you see what's passing, failing, stale or untested.
+- **Hand it off:** your agent builds from the same contract, one endpoint at a time.
 
-Local files and a CLI: no hosted service, no account and no AI calls.
+`npx mhproto build` exports the whole contract as one HTML file anyone can open. It all runs from
+plain files in your repo: no hosted service, no account and no AI calls.
 
 ## Quick start
 

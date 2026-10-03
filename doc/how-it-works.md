@@ -1,9 +1,10 @@
 # How it works
 
-MHProto (Machine–Human Protocol) keeps a feature's **behaviour rules, API, examples and
-verification checks** as plain files in your repository. `npx mhproto view` turns them into
-linked pages your team can review. Your coding agent fetches a compact packet with the exact
-rules for the endpoint it is changing. `npx mhproto verify` runs the linked checks and records
+MHProto (Machine–Human Protocol) puts the contract first. A feature's **behaviour rules, API,
+examples and verification checks** live as plain files in your repository, and `npx mhproto view`
+turns them into linked pages your team reviews before agents build and keeps in view while the
+code changes. Your coding agent works from the same contract: it fetches a compact packet with
+the exact rules for the endpoint it is changing. `npx mhproto verify` runs the linked checks and records
 evidence tied to the current files, so later edits show up as stale and rules without a check
 show up as gaps.
 
@@ -15,18 +16,20 @@ are in the [reference guide](guide.md) and the
 
 ## Who it's for
 
-MHProto is built for **developers using coding agents on existing projects**, especially those who
-already write specs or acceptance criteria. It fits features exposed as HTTP endpoints and
-described in OpenAPI 3.1.
+MHProto is built for **teams building with coding agents on existing projects**, especially
+full-stack features where frontend and backend share an API. It fits features exposed as HTTP
+endpoints and described in OpenAPI 3.1.
 
-- **The spec lives somewhere else.** Acceptance criteria sit in tickets, PR descriptions and
-  chat, so the agent gets a paraphrase or nothing at all.
-- **Agents read too much or too little.** Pasting the whole spec wastes context, and a one-line
-  prompt leaves out the edge cases.
-- **"Done" is hard to check.** After a change, nobody can say which rules have a passing test,
-  which results are out of date, and which rules were never tested.
+Coding is no longer the bottleneck. Understanding what's being built is.
 
-MHProto puts the agreement next to the code, in a form both sides can use:
+- **Agents write code faster than teams can follow it.** Plans, API shapes and edge cases get
+  decided inside prompts and diffs, where product, design, frontend and backend rarely see them.
+- **Late changes are expensive.** A mismatch between what the frontend expects and what the
+  backend returns is cheap to fix in a contract, and costly once both sides are built.
+- **Nobody can see which rules still hold.** After a few agent PRs, it's unclear which rules have
+  a passing test, which results are out of date and which were never tested.
+
+MHProto keeps the contract where everyone can see it, in a form both people and agents can use:
 
 |                      | People                                   | Coding agents                              |
 | -------------------- | ---------------------------------------- | ------------------------------------------ |
