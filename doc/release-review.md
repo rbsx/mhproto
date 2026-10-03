@@ -16,8 +16,12 @@ Subsequent work cleared these gates:
   documentation and interactive demo are live at https://mhproto.dev.
 - Desktop/mobile website flows and offline demo save/reload passed in Chromium.
 
-Mermaid upstream provenance and its complete license inventory remain open.
-An actual tarball consumer installation remains to be checked after that gate.
+The Mermaid bundle is now verified against the official `mermaid@11.16.1` npm
+archive with its deterministic local wrapper. Repeat with
+`node scripts/verify-mermaid.mjs`; hashes and registry integrity are recorded in
+the vendor manifest. Its source map identifies 59 bundled dependency versions.
+The complete bundled license review remains open. An actual tarball consumer
+installation remains to be checked after that gate.
 Windows remains unverified. No npm version has been published; `private: true`
 remains enabled. See [publishing steps](publishing.md) for the release sequence.
 

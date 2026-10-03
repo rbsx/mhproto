@@ -13,16 +13,44 @@ publication are independent.
 - Package version is `0.7.0`; `private: true` prevents accidental publication.
 - Hosted Linux/macOS, Node 22/24 checks, dependency audit/signature verification
   and desktop/mobile Chromium tests passed for commit `7d75f8b`.
-- Mermaid's copied browser bundle still lacks verified upstream identity and a
-  complete transitive license inventory. An actual tarball consumer smoke remains
-  to be completed after that gate. Windows has not been verified.
+- Mermaid's copied browser bundle is now verified against the official npm
+  archive with its deterministic wrapper. The complete bundled license inventory
+  remains open. An actual tarball consumer smoke remains to be completed after
+  that gate. Windows has not been verified.
 
 ## 1. Finish the release review
 
-Resolve the Mermaid gate in [release-review.md](release-review.md): obtain an
-official upstream artifact or a reproducible build, record its inputs and hash,
-review all bundled licenses, and update `viewer/vendor/manifest.json`, the vendor
-README and `THIRD_PARTY_NOTICES.md`. Re-run viewer tests if the bundle changes.
+The upstream identity part of the Mermaid gate is complete: the entire copied
+bundle matches the official `mermaid@11.16.1` npm archive after the documented
+local wrapper. Repeat the verification from the library checkout:
+
+```sh
+node scripts/verify-mermaid.mjs
+```
+
+It verifies the archive integrity, upstream and local hashes, MIT license and
+59 exact bundled dependency versions. It does not change the runtime or publish
+anything. Mermaid documents npm as an official distribution method:
+[Mermaid usage](https://mermaid.js.org/config/usage).
+
+To finish the remaining license part:
+
+1. Use `viewer/vendor/bundled-packages.json` as the exact version list. It comes
+   from the official bundle's source map, rather than a newly resolved dependency
+   tree.
+2. Download each listed package version with `npm pack <package>@<version>
+--ignore-scripts`. Inspect its package license declaration and relevant
+   LICENSE/COPYING/NOTICE files, plus inline third-party notices in the bundle.
+3. Record the package/version, license identifier, archive integrity and notice
+   source, and retain required license texts under `viewer/vendor/`. Account for
+   every listed version, including duplicate package names at different versions.
+4. Reference the reviewed notices in `THIRD_PARTY_NOTICES.md`, then mark
+   `licenseInventoryComplete` in the vendor manifest. Update the release review
+   evidence. Re-run viewer tests if the renderer bytes change.
+
+The complete steps and verification scope are also recorded in
+`viewer/vendor/README.md`. The [release review](release-review.md) still blocks an
+npm release until the license review and clean consumer installation pass.
 
 Then verify the final release commit:
 
