@@ -1,0 +1,15 @@
+{
+  "name": "mhproto-plugin-sql",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Example MHProto plugin: SQL tables as contract entities",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./index.mjs"
+    }
+  },
+  "peerDependencies": {
+    "mhproto": "*"
+  }
+}

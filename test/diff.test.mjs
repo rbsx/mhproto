@@ -144,8 +144,14 @@ test('snapshots omit execution evidence, support legacy baselines and reject mal
   assert.equal(saved.project.capabilities[0].evidence, undefined);
   assert.equal(saved.project.capabilities[0].digest, undefined);
   assert.deepEqual(compareModels(saved, project), []);
+  assert.equal(saved.version, 2);
+  assert.equal(saved.project.capabilities[0].operations, undefined);
+  assert.deepEqual(
+    saved.project.capabilities[0].entities.map((e) => [e.kind, e.id]),
+    [['operation', 'getStatus']],
+  );
   assert.equal(snapshotProject(project), project);
-  assert.throws(() => snapshotProject({ ...saved, version: 2 }), /Unsupported/);
+  assert.throws(() => snapshotProject({ ...saved, version: 3 }), /Unsupported/);
   assert.throws(() => snapshotProject({ name: 'Bad', capabilities: [{}] }), /valid MHProto/);
   project.capabilities[0].rules[0].text = 'Later edit';
   project.visuals.push({

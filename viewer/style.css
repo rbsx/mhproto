@@ -777,12 +777,14 @@ code {
   margin: 22px 0 6px;
 }
 .type-usage-list,
-.type-parent-list {
+.type-parent-list,
+.entity-list {
   list-style: none;
   margin: 0;
   padding: 0;
 }
-.type-usage-list li {
+.type-usage-list li,
+.entity-list li {
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
@@ -799,7 +801,11 @@ code {
     monospace;
   overflow-wrap: anywhere;
 }
-.type-usage-list li > .section-note {
+.entity-list li > a {
+  overflow-wrap: anywhere;
+}
+.type-usage-list li > .section-note,
+.entity-list li > .section-note {
   font-size: 11px;
   margin-left: auto;
 }
@@ -820,7 +826,11 @@ code {
   overflow-wrap: anywhere;
 }
 @media (max-width: 760px) {
-  .type-usage-list li > .section-note {
+  .entity-list li > a {
+    overflow-wrap: anywhere;
+  }
+  .type-usage-list li > .section-note,
+  .entity-list li > .section-note {
     margin-left: 0;
     width: 100%;
     padding-left: 48px;

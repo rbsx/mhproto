@@ -19,8 +19,11 @@ npx mhproto view
 ```
 
 Replace the example with your feature. `init` refuses to overwrite existing
-contracts or skills. `skills --agent codex|claude|all` installs repository-local
-skills in `.agents/skills` or `.claude/skills`; global agent settings stay unchanged.
+contracts; `init --minimal` creates only the rules. `skills --agent codex|claude|all` installs
+repository-local skills in `.agents/skills` or `.claude/skills`; global agent settings stay
+unchanged. It installs only missing skills and never overwrites an installed one. Choose skills
+with `--only NAME,...`, remove them with `--remove NAME,...`, and compare installed skills with
+this version using `--check`.
 The isolated Impostor pilot is a development fixture, not a package prerequisite.
 
 ## Commands
@@ -28,16 +31,25 @@ The isolated Impostor pilot is a development fixture, not a package prerequisite
 | Command         | Result                                                                   |
 | --------------- | ------------------------------------------------------------------------ |
 | init            | Scaffold a draft capability and install skills                           |
-| skills          | Install the bundled agent skills separately                              |
+| skills          | Install, choose, remove or check agent skills                            |
+| plugins         | List loaded presets and plugins, their interfaces, kinds and skills      |
 | check           | Validate references, schemas, payload examples and check bindings        |
-| context         | Retrieve a compact index or scoped endpoint/rule/schema packet           |
+| context         | Retrieve a compact index or a scoped endpoint/entity/rule/schema packet  |
 | inspect         | Emit the normalised project model as JSON                                |
 | verify          | Run linked argv commands, store revision-bound evidence                  |
 | view            | Serve a local viewer; save visual attachments and refresh source changes |
 | snapshot / diff | Save a baseline and inspect contract changes                             |
 | build           | Export viewer assets, model.json and a self-contained viewer.html        |
 
-Use `--root PATH` for another app. See `mhproto help` for command options and `skills/mhproto-specify/references/format.md` for the data format.
+Use `--root PATH` for another app. See `mhproto help` for command options and `skills/mhproto-format/SKILL.md` for the data format.
+
+## Plugins
+
+`presets` and `plugins` in `mhproto.yaml` choose the interface sources a project uses. Without
+them, the `recommended` preset loads the built-in OpenAPI plugin. `interfaces` entries on a
+capability (`{ adapter, file, options? }`) read further sources, and `interface: file` remains
+shorthand for one OpenAPI file. See [plugins.md](plugins.md) for configuration, the entity model
+and the plugin API.
 
 ## Viewer
 
@@ -59,7 +71,7 @@ Portable exports include check status, timing and observed test names, but omit 
 
 Unchecked, passing, failing and stale are distinct. Node checks require exact expected test names and structured results; missing/skipped/TODO tests fail. Evidence includes commands, exit status, timings, observed tests and a SHA-256 digest of the project configuration, system document, capability files, explicitly tracked sources and declared check files. Failures are recorded. Checks execute sequentially, with a timeout. They inherit the environment and execute the configured commands without a shell; they are not sandboxed. Run verification only for check commands you trust. Structured Node reporter output is bounded to 1 MB and fails closed if malformed or oversized.
 
-MHProto validates payload schemas and examples and its own cross-references; this is a bounded contract validator, not a complete OpenAPI standards validator. V0 supports OpenAPI 3.1 with local refs. Interfaces can originate in Zod, Protobuf tooling or handwritten OpenAPI, but only OpenAPI is consumed in this version. Optional type generation remains with the app’s chosen generator.
+MHProto validates payload schemas and examples and its own cross-references; this is a bounded contract validator, not a complete OpenAPI standards validator. V0 supports OpenAPI 3.1 with local refs. Interfaces can originate in Zod, Protobuf tooling or handwritten OpenAPI. OpenAPI is built in; other sources need a plugin. Optional type generation remains with the app’s chosen generator.
 
 A linked passing test is evidence for a rule, not proof of all its cases. Prompt-text tests do not establish live AI behaviour. Runtime permissions, races and retry behaviour require meaningful app tests. No paid evaluation is invoked by the pilot.
 
@@ -80,6 +92,7 @@ Collapsed object fields show a pale-yellow `{...}`; optional markers, nullabilit
 ```sh
 mhproto context
 mhproto context --capability daily --operation tap --stats
+mhproto context --capability daily --entity table:daily_plays
 mhproto context --capability daily --operation tap --section request,response
 mhproto context --capability daily --rule DAILY-PLAY-4
 mhproto context --capability daily --schema DailyPlayState

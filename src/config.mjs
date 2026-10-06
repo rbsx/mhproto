@@ -9,48 +9,14 @@ const strictObject = (properties, required = []) => ({
   patternProperties: { '^x-': {} },
 });
 const ajv = new Ajv({ allErrors: true });
-const schema = { anyOf: [{ type: 'object' }, { type: 'boolean' }] };
-const reference = object({ $ref: text }, ['$ref']);
-const media = object({
-  schema,
-  examples: { type: 'object', additionalProperties: { type: 'object' } },
-});
-const content = { type: 'object', additionalProperties: media };
-const parameter = {
+// A plugin list entry: `name` or `[name, options]`, as in Babel.
+const pluginEntry = {
   anyOf: [
-    reference,
-    object(
-      {
-        name: text,
-        in: { enum: ['path', 'query', 'header', 'cookie'] },
-        schema,
-        required: { type: 'boolean' },
-      },
-      ['name', 'in'],
-    ),
+    text,
+    { type: 'array', items: [text], minItems: 1, maxItems: 1 },
+    { type: 'array', items: [text, { type: 'object' }], minItems: 2, maxItems: 2 },
   ],
 };
-const parameters = { type: 'array', items: parameter };
-const body = object({ content, required: { type: 'boolean' } });
-const response = object({ content, 'x-error-codes': { type: 'array', items: { type: 'object' } } });
-const operation = object({
-  operationId: text,
-  parameters,
-  requestBody: body,
-  responses: { type: 'object', additionalProperties: response },
-  'x-mhproto-rules': texts,
-  'x-clauses': texts,
-  'x-preconditions': { type: 'array', items: { type: 'object' } },
-});
-const pathItem = object({
-  parameters,
-  ...Object.fromEntries(
-    ['get', 'post', 'put', 'patch', 'delete', 'options', 'head', 'trace'].map((method) => [
-      method,
-      operation,
-    ]),
-  ),
-});
 const shapes = {
   evidence: object(
     {
@@ -68,17 +34,13 @@ const shapes = {
     },
     ['version', 'capability', 'digest', 'finishedAt', 'results'],
   ),
-  openapi: object({
-    openapi: text,
-    info: { type: 'object' },
-    paths: { type: 'object', additionalProperties: pathItem },
-    components: object({ schemas: { type: 'object', additionalProperties: schema } }),
-  }),
   config: strictObject(
     {
       version: { const: 1 },
       name: text,
       system: text,
+      presets: { type: 'array', items: pluginEntry },
+      plugins: { type: 'array', items: pluginEntry },
       capabilities: {
         type: 'array',
         minItems: 1,
@@ -90,6 +52,13 @@ const shapes = {
             owner: text,
             spec: text,
             interface: text,
+            interfaces: {
+              type: 'array',
+              items: strictObject({ adapter: text, file: text, options: { type: 'object' } }, [
+                'adapter',
+                'file',
+              ]),
+            },
             examples: text,
             checks: text,
             sources: texts,
@@ -119,7 +88,7 @@ const shapes = {
               },
             }),
           },
-          ['id', 'spec', 'interface', 'examples', 'checks'],
+          ['id', 'spec'],
         ),
       },
     },
@@ -183,11 +152,20 @@ const shapes = {
   ),
 };
 const validators = Object.fromEntries(
-  Object.entries(shapes).map(([name, schema]) => [name, ajv.compile(schema)]),
+  Object.entries(shapes).map(([name, schema]) => [name, shapeAsserter(schema)]),
 );
 
 export function assertShape(name, value, file) {
-  const validates = validators[name];
+  return validators[name](value, file);
+}
+
+// Returns (value, file) => value, throwing one readable error that names the file.
+export function shapeAsserter(schema, validator = ajv) {
+  const validates = validator.compile(schema);
+  return (value, file) => assertWith(validates, value, file);
+}
+
+function assertWith(validates, value, file) {
   if (!validates(value))
     throw new Error(
       `${file}: ${validates.errors.map((e) => `${e.instancePath || '/'} ${e.message}${e.params.additionalProperty ? ` (${e.params.additionalProperty})` : ''}`).join('; ')}`,

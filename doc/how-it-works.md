@@ -12,13 +12,13 @@ No hosted service, no account and no AI calls: it's a CLI over files you already
 
 To install, follow the [quick start](../README.md#quick-start). Command options and file details
 are in the [reference guide](guide.md) and the
-[file format](../skills/mhproto-specify/references/format.md).
+[file format](../skills/mhproto-format/SKILL.md).
 
 ## Who it's for
 
 MHProto is built for **teams building with coding agents on existing projects**, especially
 full-stack features where frontend and backend share an API. It fits features exposed as HTTP
-endpoints and described in OpenAPI 3.1.
+endpoints and described in OpenAPI 3.1, and [plugins](plugins.md) add other sources.
 
 Coding is no longer the bottleneck. Understanding what's being built is.
 
@@ -45,9 +45,10 @@ from a working project, and the outputs are real.
 
 ### 1. Describe the feature in your repo
 
-Each feature (a _capability_ in the files and CLI) has four parts: numbered behaviour rules, an
-OpenAPI interface, examples and checks. The interface is one OpenAPI 3.1 file with local `$ref`s
-(3.0 isn't supported), and every operation in that file belongs to the feature.
+Each feature (a _capability_ in the files and CLI) has up to four parts: numbered behaviour rules,
+an OpenAPI interface, examples and checks. Only the rules are required; add the other parts when
+you need them. The interface is one OpenAPI 3.1 file with local `$ref`s (3.0 isn't supported),
+and every operation in that file belongs to the feature.
 
 ```text
 mhproto.yaml                       # lists your features and their files
@@ -122,7 +123,7 @@ shows exactly what changed:
 
 ### 3. Give your agent the relevant context
 
-`init` installs five agent skills in your repository (`.claude/skills` with `--agent claude`,
+`init` installs five agent skills and their shared format reference in your repository (`.claude/skills` with `--agent claude`,
 `.agents/skills` with `--agent codex`). Once the change is agreed, hand it over:
 
 > Use mhproto-implement to add ORDER-CANCEL-4 to `cancelOrder`, then run mhproto verify.
@@ -192,6 +193,26 @@ WARNING [orders] ORDER-CANCEL-4 has no linked executable check
 0 errors, 2 warnings
 ```
 
+## Building blocks
+
+MHProto is a small core plus plugins, configured like Babel. The core handles rules, examples,
+checks, evidence, visuals, changes and agent context. Plugins read interfaces and turn them into
+_entities_ (operations, types, tables, screens) that the core validates, compares, packs for
+agents and shows in the viewer. OpenAPI is the built-in plugin and loads by default:
+
+```yaml
+plugins: [sql, ./tools/mhproto-flows.mjs] # npm mhproto-plugin-sql and a local module
+capabilities:
+  - id: orders
+    spec: mhproto/capabilities/orders/spec.md
+    interfaces:
+      - { adapter: openapi, file: mhproto/interfaces/openapi.yaml }
+      - { adapter: sql, file: db/migrations }
+```
+
+`npx mhproto plugins` shows what is loaded. [Plugins](plugins.md) explains how to write one in a
+few dozen lines.
+
 ## Agent skills
 
 | Skill               | Use it to                                                                          |
@@ -201,6 +222,11 @@ WARNING [orders] ORDER-CANCEL-4 has no linked executable check
 | `mhproto-implement` | Implement an agreed contract without silently changing it.                         |
 | `mhproto-verify`    | Write tests linked to rules and examples, then run `mhproto verify`.               |
 | `mhproto-reconcile` | Find and resolve drift between the spec, schemas, examples and code.               |
+
+All skills share `mhproto-format`, the file format reference, which is installed with any of
+them. Pick the ones you want with `npx mhproto skills --only implement,verify`, remove one with
+`--remove`, and see which differ from this version with `--check`. Installing never overwrites a
+skill you have edited. Plugins can add their own skills.
 
 The skills are plain `SKILL.md` files inside your repository: read them, edit them and commit
 them. Your global agent settings stay unchanged.
@@ -221,6 +247,10 @@ MHProto gives it the agreed contract and records the evidence.
 when an operation, example or check cites a rule that doesn't exist. `context` returns only the
 rules linked to the endpoint being changed. `verify` ties results to file digests, so later
 edits show up as stale.
+
+**My API isn't OpenAPI. Can I still use it?** Yes. Start with rules alone, then add a
+[plugin](plugins.md) for your source. A plugin reads it into entities with rule links, and the
+viewer, checks, changes and agent context work the same way.
 
 **How is this different from OpenAPI docs?** OpenAPI describes the shapes. MHProto adds the
 behaviour rules, examples and test evidence around those shapes, links them all by ID, and

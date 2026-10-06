@@ -7,7 +7,8 @@
     "mhproto": "./bin/mhproto.mjs"
   },
   "exports": {
-    ".": "./src/core.mjs"
+    ".": "./src/core.mjs",
+    "./plugin": "./src/plugin.mjs"
   },
   "files": [
     "bin",
