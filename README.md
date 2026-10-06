@@ -42,5 +42,5 @@ output. The [reference guide](https://mhproto.dev/docs/reference/) covers every 
 
 ---
 
-`0.8.0-preview.0` · development preview · [Feedback](https://github.com/rbsx/mhproto/issues) ·
+`0.9.0-preview.0` · development preview · [Feedback](https://github.com/rbsx/mhproto/issues) ·
 [Contributing](CONTRIBUTING.md) · [MIT](LICENSE) ([third-party notices](THIRD_PARTY_NOTICES.md))

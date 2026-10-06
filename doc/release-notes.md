@@ -1,4 +1,8 @@
-# Unreleased
+# MHProto 0.9.0-preview.0
+
+Prepared as the next development preview on the npm `next` channel; not yet published.
+Existing `mhproto.yaml` files load unchanged. `mhproto inspect` output changed shape: see the
+OpenAPI note below.
 
 - **Building blocks.** A small core plus plugins, configured with `presets` and `plugins` in
   `mhproto.yaml` like Babel. OpenAPI is the built-in plugin and loads by default; existing
