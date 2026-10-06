@@ -827,10 +827,10 @@ code {
 }
 @media (max-width: 760px) {
   .entity-list li > a {
-  overflow-wrap: anywhere;
-}
-.type-usage-list li > .section-note,
-.entity-list li > .section-note {
+    overflow-wrap: anywhere;
+  }
+  .type-usage-list li > .section-note,
+  .entity-list li > .section-note {
     margin-left: 0;
     width: 100%;
     padding-left: 48px;
