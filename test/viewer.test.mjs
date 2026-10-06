@@ -13,7 +13,9 @@ async function viewerCode() {
   const [app, diff] = await Promise.all(
     ['app.js', 'diff.js'].map((name) => readFile(path.join(packageRoot, 'viewer', name), 'utf8')),
   );
-  return bundleViewer(app, diff);
+  // The OpenAPI pages are a plugin script, loaded before the viewer as in exports.
+  const openapi = await readFile(path.join(packageRoot, 'src/plugins/openapi/viewer.js'), 'utf8');
+  return openapi + '\n' + bundleViewer(app, diff);
 }
 
 async function fixture({

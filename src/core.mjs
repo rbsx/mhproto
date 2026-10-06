@@ -8,6 +8,7 @@ import { assertShape } from './config.mjs';
 import { builtinRegistry, describeRegistry, loadPlugins } from './plugins.mjs';
 import { entitiesOf, entityLink, interfacesOf } from '../viewer/diff.js';
 export { projectPath } from './paths.mjs';
+export { entitiesOf, interfacesOf, openapiView } from '../viewer/diff.js';
 // Kept for existing imports of these helpers from the package root.
 export {
   operationList,

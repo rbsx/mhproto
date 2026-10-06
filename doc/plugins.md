@@ -229,6 +229,33 @@ the feature page. `ui.html` escapes every interpolated value unless it came from
 for plain strings. If a renderer throws, the page shows the error and falls back to the
 definition.
 
+#### Page-level hooks
+
+A plugin can also own whole pages, as the built-in OpenAPI plugin does for endpoints and types
+([`src/plugins/openapi/viewer.js`](../src/plugins/openapi/viewer.js)). These hooks are newer than
+`section` and `summary` and may change before 1.0:
+
+| Hook                                  | Purpose                                                                               |
+| ------------------------------------- | ------------------------------------------------------------------------------------- |
+| `ownsKinds: ['kind', …]`              | Kinds this plugin shows itself; they get no generic section or page.                  |
+| `setup(ui)`                           | Called before each render, for caches such as a type index.                           |
+| `index(project)`                      | Build those caches for a baseline before it is used; throw to reject it.              |
+| `overview(cap, ui)`                   | Markup on the feature page, after its description.                                    |
+| `pages: { segment(cap, id, ui) }`     | `#/features/:feature/<segment>/:id`; returns `{ html, title, change }`.               |
+| `targetUrl(cap, { kind, id })`        | The page for an entity or visual target; `null` if missing, `undefined` if not yours. |
+| `ruleTarget(cap, ruleId)`             | `{ url, note }` of the page that shows a rule.                                        |
+| `exampleTarget(cap, example)`         | `{ url, note }` of the page that shows an example.                                    |
+| `search(cap, matches)`                | `{ lead, trail }` result lists around the generic results.                            |
+| `changeTitle(change)`                 | A title for this plugin's kinds in **Changes**.                                       |
+| `decorate(cap, { changeFor, badge })` | Add comparison badges to this plugin's markup.                                        |
+| `targetVisuals(target)`               | Extra visuals to show with a target, such as a field's under its request.             |
+
+`html` values follow the same rule as renderers: use `ui.html`, or `ui.raw` for markup you built
+and escaped yourself. The `ui` passed to these hooks also has `ui.text` (the viewer's own blocks
+as strings: attachments, galleries, checks, examples, diagrams, rule links), `ui.model`
+(`canonical`, `entitiesOf`, `openapiView`, `operationRuleIds`) and `ui.state` (`project`,
+`baseline`, `baselineProject`, `comparing`).
+
 ## Test and publish
 
 Load a fixture project with the public API and assert on what users see:
@@ -238,7 +265,7 @@ import { loadProject, validateProject } from 'mhproto';
 
 const project = await loadProject('test/fixture');
 assert.deepEqual(await validateProject(project), []);
-assert.equal(project.capabilities[0].entities[0].kind, 'screen');
+assert.ok(project.capabilities[0].entities.some((e) => e.kind === 'screen'));
 ```
 
 For packets, run the CLI against the fixture: `mhproto context --entity screen:home --root test/fixture`.
@@ -255,10 +282,11 @@ with `mhproto` as a peer dependency, export the plugin as the package's default 
 - `interface:` keeps meaning one OpenAPI file; `mhproto.yaml` files without `presets` or
   `plugins` load exactly as before. Evidence digests are unchanged, so recorded runs stay fresh.
 - The OpenAPI plugin reproduces the previous output: on the demo project, every context packet,
-  every comparison and all 322 viewer pages are identical.
+  every comparison, all 322 viewer pages, their titles and search results are identical.
 - Snapshots are now version 2 and store interfaces and entities. Version 1 snapshots and exported
   previews from earlier releases still load as baselines.
-- Capabilities with OpenAPI keep the `openapi`, `operations`, `transitions` and `nonTransitions`
-  fields in `mhproto inspect`; OpenAPI entities are derived from them. They will move to entities
-  when the viewer's OpenAPI pages become a renderer like any other plugin's.
+- OpenAPI is stored like any interface: operations and named schemas are entities, and the rest
+  of the document is the interface's `meta`. `mhproto inspect` no longer has the `openapi`,
+  `operations`, `transitions` and `nonTransitions` capability fields; `openapiView(capability)`
+  from `mhproto` rebuilds them. Older models and snapshots are migrated when read.
 - Each adapter appears at most once per capability in this version.

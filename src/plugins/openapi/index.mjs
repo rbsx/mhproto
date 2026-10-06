@@ -416,4 +416,5 @@ export default definePlugin(() => ({
       visualTarget,
     },
   },
+  viewer: new URL('./viewer.js', import.meta.url),
 }));

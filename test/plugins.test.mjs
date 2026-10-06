@@ -390,7 +390,8 @@ async function render(project, hash = '') {
     ['app.js', 'diff.js'].map((name) => readFile(path.join(packageRoot, 'viewer', name), 'utf8')),
   );
   const { bundleViewer } = await import('../src/server.mjs');
-  await window.eval(`(async()=>{${bundleViewer(app, diff)}\n})()`);
+  const openapi = await readFile(path.join(packageRoot, 'src/plugins/openapi/viewer.js'), 'utf8');
+  await window.eval(`(async()=>{${openapi}\n${bundleViewer(app, diff)}\n})()`);
   return { window, doc };
 }
 

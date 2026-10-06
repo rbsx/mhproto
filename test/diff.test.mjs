@@ -224,6 +224,8 @@ test('standalone export embeds the selected baseline and runs its shared compari
   };
   dom.window.scrollTo = () => {};
   dom.window.mermaid = { initialize() {}, render: async () => ({ svg: '<svg></svg>' }) };
+  for (const script of dom.window.document.querySelectorAll('script:not([type]):not([src])'))
+    dom.window.eval(script.textContent);
   await dom.window.eval(
     `(async()=>{${html.match(/<script type="module">([\s\S]*?)<\/script>/)[1]}\n})()`,
   );
