@@ -146,7 +146,7 @@ try {
   );
   const state = { consumer, app, binary, preview, licenseFiles: licenseFiles.length };
   console.log(
-    'Clean tarball install passed: public import, executable CLI, scaffold, 10 skill copies, validation, scoped context, linked verification, stale evidence, snapshot/diff and offline HTML with complete notices.',
+    'Clean tarball install passed: public import, executable CLI, scaffold, 12 skill copies, validation, scoped context, linked verification, stale evidence, snapshot/diff and offline HTML with complete notices.',
   );
   const server = createServer();
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));

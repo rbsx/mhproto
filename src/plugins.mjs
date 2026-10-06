@@ -105,7 +105,10 @@ async function resolveModule(root, name, type) {
         `Cannot find ${type} "${name}". Install ${candidates.join(' or ')} in the project, or use a relative path.`,
       );
   }
-  const module = await import(pathToFileURL(file).href);
+  const url = pathToFileURL(file);
+  // Project files reload when edited, so a running `mhproto view` sees plugin changes.
+  if (name.startsWith('.')) url.search = `?mtime=${(await stat(file)).mtimeMs}`;
+  const module = await import(url.href);
   if (module.default === undefined) throw new Error(`${type} ${name} has no default export`);
   return { id: file, source: path.relative(root, file) || file, file, value: module.default };
 }
