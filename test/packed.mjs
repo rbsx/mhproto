@@ -41,7 +41,7 @@ try {
   await mkdir(app);
   await cli(['init', '--root', app, '--agent', 'all']);
   for (const dir of ['.agents/skills', '.claude/skills'])
-    assert.equal((await readdir(path.join(app, dir))).length, 5);
+    assert.equal((await readdir(path.join(app, dir))).length, 6);
   const { parse, stringify } = await import(
     pathToFileURL(path.join(consumer, 'node_modules/yaml/dist/index.js'))
   );

@@ -37,7 +37,7 @@ The isolated Impostor pilot is a development fixture, not a package prerequisite
 | snapshot / diff | Save a baseline and inspect contract changes                             |
 | build           | Export viewer assets, model.json and a self-contained viewer.html        |
 
-Use `--root PATH` for another app. See `mhproto help` for command options and `skills/mhproto-specify/references/format.md` for the data format.
+Use `--root PATH` for another app. See `mhproto help` for command options and `skills/mhproto-format/SKILL.md` for the data format.
 
 ## Viewer
 

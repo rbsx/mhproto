@@ -12,7 +12,7 @@ No hosted service, no account and no AI calls: it's a CLI over files you already
 
 To install, follow the [quick start](../README.md#quick-start). Command options and file details
 are in the [reference guide](guide.md) and the
-[file format](../skills/mhproto-specify/references/format.md).
+[file format](../skills/mhproto-format/SKILL.md).
 
 ## Who it's for
 

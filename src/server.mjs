@@ -16,7 +16,9 @@ const assets = {
 };
 export async function model(root) {
   const project = await loadProject(root);
-  return { ...project, issues: await validateProject(project) };
+  const result = { ...project, issues: await validateProject(project) };
+  // The plugin registry stays in memory; it is never serialised.
+  return Object.defineProperty(result, 'registry', { value: project.registry });
 }
 async function readBaseline(file, required = false) {
   try {
@@ -132,6 +134,17 @@ export function createHandler(root, { against } = {}) {
         response.end(request.method === 'HEAD' ? undefined : bytes);
         return;
       }
+      if (url.pathname.startsWith('/plugins/')) {
+        const project = await loadProject(root);
+        const script = project.registry.viewers.find((v) => '/' + v.url === url.pathname);
+        if (!script) {
+          response.writeHead(404).end();
+          return;
+        }
+        response.setHeader('content-type', 'text/javascript');
+        response.end(await readFile(script.file));
+        return;
+      }
       if (url.pathname === '/api/model') {
         response.setHeader('content-type', 'application/json');
         response.end(JSON.stringify(await model(root)));
@@ -209,6 +222,8 @@ export async function exportViewer(root, destination, { against } = {}) {
     );
   const project = {
     ...data,
+    // Plugin sources can be machine paths; exports keep names and capabilities only.
+    plugins: (data.plugins ?? []).map(({ source, ...plugin }) => plugin),
     capabilities: loaded.capabilities.map((cap) => ({
       ...cap,
       evidence: cap.evidence
@@ -262,6 +277,12 @@ export async function exportViewer(root, destination, { against } = {}) {
     ),
   );
   const bundled = bundleViewer(js, diff);
+  const scripts = await Promise.all(
+    loaded.registry.viewers.map(async (v) => [v.url, await readFile(v.file, 'utf8')]),
+  );
+  const inlineScripts = scripts
+    .map(([, code]) => `<script>${code.replace(/<\/script/gi, '<\\/script')}</script>`)
+    .join('');
   const safeJson = (value) => JSON.stringify(value).replaceAll('<', '\\u003c');
   const standalone = html
     .replace(/<link\s+rel="stylesheet"\s+href="\/style\.css"\s*\/?>/, () => `<style>${css}</style>`)
@@ -272,7 +293,7 @@ export async function exportViewer(root, destination, { against } = {}) {
     .replace(
       /<script\s+type="module"\s+src="\/app\.js"\s*>\s*<\/script>/,
       () =>
-        `<script id="mhproto-model" type="application/json">${safeJson(project)}</script><script id="mhproto-media" type="application/json">${safeJson(media)}</script><script id="mhproto-baseline" type="application/json">${safeJson(baseline)}</script><script type="module">${bundled.replace(/<\/script/gi, '<\\/script')}</script>`,
+        `${inlineScripts}<script id="mhproto-model" type="application/json">${safeJson(project)}</script><script id="mhproto-media" type="application/json">${safeJson(media)}</script><script id="mhproto-baseline" type="application/json">${safeJson(baseline)}</script><script type="module">${bundled.replace(/<\/script/gi, '<\\/script')}</script>`,
     );
   if (
     !standalone.includes('id="mhproto-model"') ||
@@ -289,6 +310,7 @@ export async function exportViewer(root, destination, { against } = {}) {
     ['model.json', JSON.stringify(project, null, 2)],
     ['baseline.json', JSON.stringify(baseline)],
     ['viewer.html', standalone],
+    ...scripts,
   ]);
   await mkdir(destination, { recursive: true });
   // Resolve every output before replacing any existing file.
