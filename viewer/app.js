@@ -903,8 +903,7 @@ function entityPage(cap, entity) {
   }<p class="type-source section-note">${entity.derived ? 'Name derived for this view from its existing structure.' : 'Defined in ' + escape(cap.files.interface) + ' · ' + escape(entity.id)}</p>`;
 }
 function pluginEntityPage(cap, entity) {
-  const info = kindInfo(entity.kind),
-    all = project.capabilities.flatMap((c) => pluginEntities(c).map((e) => ({ cap: c, e })));
+  const info = kindInfo(entity.kind);
   const rules = cap.rules.filter((r) => entity.rules.includes(r.id));
   const examples = cap.examples.filter((e) => e.rules?.some((id) => entity.rules.includes(id)));
   const checks = cap.checks.filter(
@@ -912,53 +911,32 @@ function pluginEntityPage(cap, entity) {
       c.rules?.some((id) => entity.rules.includes(id)) ||
       c.examples?.some((id) => examples.some((e) => e.id === id)),
   );
-  const entityLabel = (feature, e) =>
-    `<a href="${escape(entityUrl(feature, e))}">${escape(e.title ?? e.id)}</a><span class="section-note">${escape(kindInfo(e.kind).label)}${feature.id !== cap.id ? ' · ' + escape(feature.title ?? feature.id) : ''}</span>`;
+  // Any entity, including OpenAPI operations and types, as a link to its page.
+  const entityRef = (feature, e) => {
+    if (e.adapter === 'openapi' && e.kind === 'operation')
+      return `${method(e.data)}<a href="${escape(endpointUrl(feature, e.data))}">${escape(e.data.path)}</a>`;
+    const type = e.adapter === 'openapi' && entityIndex.caps.get(feature.id)?.get(e.id);
+    const link = type
+      ? typeLink(feature, type)
+      : `<a href="${escape(entityUrl(feature, e))}">${escape(e.title ?? e.id)}</a>`;
+    return `${link}<span class="section-note">${escape(kindInfo(e.kind).label)}${feature.id !== cap.id ? ' · ' + escape(feature.title ?? feature.id) : ''}</span>`;
+  };
   const links = entity.links.map((link) => {
     const feature = project.capabilities.find((c) => c.id === (link.capability ?? cap.id));
     const found =
-      feature &&
-      (link.kind === 'operation'
-        ? (feature.operations ?? []).find((o) => o.operationId === link.id)
-        : pluginEntities(feature).find((e) => e.kind === link.kind && e.id === link.id));
-    const label = !found
-      ? `${escape(link.kind)}:${escape(link.id)}`
-      : link.kind === 'operation'
-        ? `${method(found)}<a href="${escape(endpointUrl(feature, found))}">${escape(found.path)}</a>`
-        : entityLabel(feature, found);
-    return `<li>${label}${link.relation ? `<span class="section-note">${escape(link.relation)}</span>` : ''}</li>`;
+      feature && entitiesOf(feature).find((e) => e.kind === link.kind && e.id === link.id);
+    return `<li>${found ? entityRef(feature, found) : `${escape(link.kind)}:${escape(link.id)}`}${link.relation ? `<span class="section-note">${escape(link.relation)}</span>` : ''}</li>`;
   });
-  const usedBy = [
-    ...project.capabilities.flatMap((feature) =>
-      (feature.operations ?? [])
-        .filter((op) =>
-          (op['x-mhproto-links'] ?? []).some((value) => {
-            const [kind, id] = String(value)
-              .replace(/^[a-z][a-z0-9-]*\//, '')
-              .split(/:(.*)/);
-            return (
-              kind === entity.kind &&
-              id === entity.id &&
-              (String(value).includes('/')
-                ? String(value).startsWith(cap.id + '/')
-                : feature.id === cap.id)
-            );
-          }),
-        )
-        .map(
-          (op) =>
-            `<li>${method(op)}<a href="${escape(endpointUrl(feature, op))}">${escape(op.path)}</a></li>`,
-        ),
-    ),
-    ...all
-      .filter(({ cap: feature, e }) =>
+  const usedBy = project.capabilities.flatMap((feature) =>
+    entitiesOf(feature)
+      .filter((e) =>
         e.links.some(
           (l) =>
             (l.capability ?? feature.id) === cap.id && l.kind === entity.kind && l.id === entity.id,
         ),
       )
-      .map(({ cap: feature, e }) => `<li>${entityLabel(feature, e)}</li>`),
-  ];
+      .map((e) => `<li>${entityRef(feature, e)}</li>`),
+  );
   return `<a class="back" href="${escape(featureUrl(cap))}">← ${escape(cap.title ?? cap.id)}</a><header><h1>${escape(entity.title ?? entity.id)}</h1><p class="section-note">${escape(info.label)} · ${escape(entity.id)}</p>${entity.summary ? `<p class="description">${escape(entity.summary)}</p>` : ''}</header><div class="page-actions"><button class="text-button" data-copy-url>Copy page link</button></div>${pluginMarkup(entity.kind, 'section', entity, () => (entity.data === undefined ? '' : disclosure('Definition', raw(entity.data), true)))}${visualGallery(target(cap, entity.kind, entity.id))}<section><h2>Behaviour</h2>${rules.length ? `<ul class="rule-list">${rules.map((r) => `<li id="${escape(r.id)}">${attachmentBlock(target(cap, 'rule', r.id), prose(r.text), { tag: 'div', className: 'rule-text', label: r.id })}<a class="rule-id" href="${escape(entityUrl(cap, entity, r.id))}">${escape(r.id)}</a></li>`).join('')}</ul>` : '<p class="section-note">No behaviour rules linked yet.</p>'}</section>${links.length ? `<section><h2>Depends on</h2><ul class="type-parent-list">${links.join('')}</ul></section>` : ''}${usedBy.length ? `<section><h2>Used by</h2><ul class="type-parent-list">${usedBy.join('')}</ul></section>` : ''}${examples.length ? `<section><h2>Examples</h2>${examples.map((e) => scenario(cap, e)).join('')}</section>` : ''}${checksSection(cap, checks, rules)}<p class="type-source section-note">Defined in ${escape(entity.file)}</p>`;
 }
 function sourcesPage(cap) {

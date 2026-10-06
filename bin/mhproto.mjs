@@ -94,7 +94,14 @@ async function availableSkills() {
     .sort()
     .map((name) => ({ name, path: path.join(packageRoot, 'skills', name), plugin: null }));
   const config = await readConfig();
-  if (config) skills.push(...(await loadPlugins(root, config)).skills);
+  if (config)
+    for (const skill of (await loadPlugins(root, config)).skills) {
+      if (skills.some((s) => s.name === skill.name))
+        throw new Error(
+          `Plugin ${skill.plugin} provides skill ${skill.name}, which MHProto already has`,
+        );
+      skills.push(skill);
+    }
   return skills;
 }
 
