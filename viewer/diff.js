@@ -1,5 +1,6 @@
-// Pure contract comparison, shared by the CLI, server and browser.
+// Pure contract model helpers and comparison, shared by the CLI, server and browser.
 const unordered = new Set([
+  'links',
   'required',
   'enum',
   'type',
@@ -33,9 +34,105 @@ export function canonical(value, key = '', parents = []) {
     );
   return value;
 }
+// Entity view. Every interface adapter normalises its source into entities:
+// { adapter, file, kind, id, title, summary, rules, links, data }.
+// OpenAPI keeps its original capability fields (openapi, operations, transitions,
+// nonTransitions) as the in-memory view the viewer renders. Its entities are always
+// derived from that view, so the two cannot disagree; serialised snapshots store
+// entities instead and the view is rebuilt when they are read.
+const openapiView = ['openapi', 'operations', 'transitions', 'nonTransitions'];
+const linkedRules = (op) => [
+  ...new Set(
+    [
+      ...(op.rules ?? []),
+      ...(op['x-preconditions'] ?? []).map((x) => x.fails?.clause),
+      ...Object.values(op.responses ?? {}).flatMap((r) =>
+        (r['x-error-codes'] ?? []).map((x) => x.clause),
+      ),
+    ].filter(Boolean),
+  ),
+];
+// Rules shown and packed with an operation: its contract links plus presentation groups.
+export function operationRuleIds(cap, op) {
+  const p = cap.presentation?.operations?.[op.operationId] ?? {};
+  return [
+    ...new Set([
+      ...linkedRules(op),
+      ...[...(p.rules ?? []), ...(p.ruleGroups ?? []).flatMap((g) => g.rules ?? [])].filter(
+        Boolean,
+      ),
+    ]),
+  ];
+}
+// `kind:id` or `capability/kind:id`; objects pass through.
+export function entityLink(value) {
+  if (value && typeof value === 'object') return value;
+  const match = /^(?:([a-z][a-z0-9-]*)\/)?([a-z][a-z0-9-]*):(.+)$/.exec(String(value));
+  return match
+    ? { ...(match[1] ? { capability: match[1] } : {}), kind: match[2], id: match[3] }
+    : { kind: '', id: String(value) };
+}
+export function openapiEntities({ operations = [], document, file }) {
+  return [
+    ...operations.map((op) => ({
+      adapter: 'openapi',
+      file,
+      kind: 'operation',
+      id: op.operationId,
+      title: `${op.method} ${op.path}`,
+      ...(op.summary ? { summary: op.summary } : {}),
+      rules: linkedRules(op),
+      links: (op['x-mhproto-links'] ?? []).map(entityLink),
+      data: op,
+    })),
+    ...Object.entries(document?.components?.schemas ?? {}).map(([name, schema]) => ({
+      adapter: 'openapi',
+      file,
+      kind: 'schema',
+      id: name,
+      title: name,
+      rules: [],
+      links: [],
+      data: { name, schema },
+    })),
+  ];
+}
+export function entitiesOf(cap) {
+  const others = (cap?.entities ?? []).filter((e) => e.adapter !== 'openapi');
+  if (!cap?.openapi) return others;
+  return [
+    ...openapiEntities({
+      operations: cap.operations,
+      document: cap.openapi,
+      file: cap.files?.interface,
+    }),
+    ...others,
+  ];
+}
+export function interfacesOf(cap) {
+  return (
+    cap?.interfaces ?? (cap?.openapi ? [{ adapter: 'openapi', file: cap.files?.interface }] : [])
+  ).map((item) => (item.adapter === 'openapi' ? { ...item, document: cap.openapi } : item));
+}
+function withOpenapiView(cap) {
+  if (cap.openapi || !Array.isArray(cap.interfaces)) return cap;
+  const document = cap.interfaces.find((i) => i.adapter === 'openapi')?.document;
+  if (!document) return cap;
+  return {
+    ...cap,
+    openapi: document,
+    operations: cap.entities
+      .filter((e) => e.adapter === 'openapi' && e.kind === 'operation')
+      .map((e) => e.data),
+    transitions: document['x-phase-transitions'] ?? [],
+    nonTransitions: document['x-phase-unchanged-by'] ?? [],
+  };
+}
 export function snapshotProject(value) {
   const wrapped = ['mhproto-snapshot', 'bive-snapshot'].includes(value?.format);
-  if (wrapped && value.version !== 1) throw new Error('Unsupported MHProto snapshot version.');
+  // Version 1 stored the OpenAPI view; version 2 stores interfaces and entities.
+  if (wrapped && ![1, 2].includes(value.version))
+    throw new Error('Unsupported MHProto snapshot version.');
   const project = wrapped ? value.project : value;
   if (
     !project ||
@@ -50,16 +147,17 @@ export function snapshotProject(value) {
       !cap ||
       typeof cap.id !== 'string' ||
       ids.has(cap.id) ||
-      !Array.isArray(cap.operations) ||
       !Array.isArray(cap.rules) ||
       !Array.isArray(cap.examples) ||
       !Array.isArray(cap.checks) ||
-      !cap.openapi
+      (cap.openapi ? !Array.isArray(cap.operations) : !Array.isArray(cap.entities))
     )
       throw new Error('The baseline does not contain a valid MHProto contract.');
     ids.add(cap.id);
   }
-  return project;
+  return wrapped && value.version === 2
+    ? { ...project, capabilities: project.capabilities.map(withOpenapiView) }
+    : project;
 }
 export function contractSnapshot(
   value,
@@ -70,14 +168,18 @@ export function contractSnapshot(
   return JSON.parse(
     JSON.stringify({
       format: 'mhproto-snapshot',
-      version: 1,
+      version: 2,
       label,
       createdAt,
       project: {
         name: project.name,
         system: project.system ?? '',
         visuals: project.visuals ?? [],
-        capabilities: project.capabilities.map(({ evidence, digest, ...cap }) => cap),
+        capabilities: project.capabilities.map(({ evidence, digest, ...cap }) => ({
+          ...Object.fromEntries(Object.entries(cap).filter(([key]) => !openapiView.includes(key))),
+          interfaces: interfacesOf(cap),
+          entities: entitiesOf(cap),
+        })),
       },
     }),
   );
@@ -165,10 +267,8 @@ export function compareModels(beforeValue, afterValue) {
   );
   const oldCaps = new Map(before.capabilities.map((c) => [c.id, c])),
     newCaps = new Map(after.capabilities.map((c) => [c.id, c]));
-  const feature = (cap) => {
-    if (!cap) return undefined;
-    const { operations, ruleTitles, ...presentation } = cap.presentation ?? {};
-    const { paths, components, ...api } = cap.openapi,
+  const openapiGlobals = (doc) => {
+    const { paths, components, ...api } = doc,
       { schemas, ...shared } = components ?? {};
     const pathItems = Object.fromEntries(
       Object.entries(paths ?? {}).map(([url, item]) => [
@@ -191,14 +291,31 @@ export function compareModels(beforeValue, afterValue) {
         ),
       ]),
     );
+    return { ...api, components: shared, pathItems };
+  };
+  const feature = (cap) => {
+    if (!cap) return undefined;
+    const { operations, ruleTitles, ...presentation } = cap.presentation ?? {};
+    const others = interfacesOf(cap).filter((i) => i.adapter !== 'openapi');
     return {
       title: cap.title ?? cap.id,
       description: cap.description ?? '',
       url: cap.url ?? '',
       behaviour: behaviourText(cap.prose),
-      api: { ...api, components: shared, pathItems },
-      transitions: cap.transitions ?? [],
-      nonTransitions: cap.nonTransitions ?? [],
+      ...(cap.openapi
+        ? {
+            api: openapiGlobals(cap.openapi),
+            transitions: cap.transitions ?? [],
+            nonTransitions: cap.nonTransitions ?? [],
+          }
+        : {}),
+      ...(others.length
+        ? {
+            interfaces: Object.fromEntries(
+              others.map((i) => [i.adapter, { file: i.file, meta: i.meta ?? null }]),
+            ),
+          }
+        : {}),
       presentation,
       files: cap.files ?? {},
       sources: cap.sources ?? [],
@@ -207,32 +324,42 @@ export function compareModels(beforeValue, afterValue) {
   };
   const rules = (cap) =>
     (cap?.rules ?? []).map((r) => ({ ...r, title: cap.presentation?.ruleTitles?.[r.id] ?? r.id }));
-  const operations = (cap) =>
-    (cap?.operations ?? []).map((op) => ({
-      ...op,
-      presentation: cap.presentation?.operations?.[op.operationId] ?? {},
+  // What a reviewer compares for each entity. OpenAPI keeps its established shapes.
+  const comparable = (cap, entity) =>
+    entity.adapter === 'openapi' && entity.kind === 'operation'
+      ? { ...entity.data, presentation: cap.presentation?.operations?.[entity.id] ?? {} }
+      : entity.adapter === 'openapi'
+        ? entity.data
+        : {
+            title: entity.title,
+            summary: entity.summary,
+            rules: entity.rules,
+            links: entity.links,
+            data: entity.data,
+          };
+  const entities = (cap) =>
+    entitiesOf(cap).map((entity) => ({
+      kind: entity.kind,
+      id: entity.id,
+      value: comparable(cap, entity),
     }));
   for (const id of new Set([...oldCaps.keys(), ...newCaps.keys()])) {
     const a = oldCaps.get(id),
       b = newCaps.get(id);
     add(id, 'feature', id, feature(a), feature(b));
     compare(id, 'rule', rules(a), rules(b), 'id');
-    compare(id, 'operation', operations(a), operations(b), 'operationId');
+    const oldEntities = a ? entities(a) : [],
+      newEntities = b ? entities(b) : [];
+    for (const kind of new Set([...oldEntities, ...newEntities].map((e) => e.kind))) {
+      const pick = (list) =>
+        list.filter((e) => e.kind === kind).map((e) => ({ id: e.id, value: e.value }));
+      const oldMap = new Map(pick(oldEntities).map((e) => [e.id, e.value])),
+        newMap = new Map(pick(newEntities).map((e) => [e.id, e.value]));
+      for (const entityId of new Set([...oldMap.keys(), ...newMap.keys()]))
+        add(id, kind, entityId, oldMap.get(entityId), newMap.get(entityId));
+    }
     compare(id, 'example', a?.examples ?? [], b?.examples ?? [], 'id');
     compare(id, 'check', a?.checks ?? [], b?.checks ?? [], 'id');
-    compare(
-      id,
-      'schema',
-      Object.entries(a?.openapi.components?.schemas ?? {}).map(([name, schema]) => ({
-        name,
-        schema,
-      })),
-      Object.entries(b?.openapi.components?.schemas ?? {}).map(([name, schema]) => ({
-        name,
-        schema,
-      })),
-      'name',
-    );
     compare(
       id,
       'visual',

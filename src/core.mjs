@@ -2,14 +2,20 @@ import { readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { parse } from 'yaml';
-import Ajv from 'ajv/dist/2020.js';
-import addFormats from 'ajv-formats';
 import { visualsFile, targetError, safeDesignUrl, mediaMime } from './visuals.mjs';
 import { projectPath } from './paths.mjs';
 import { assertShape } from './config.mjs';
+import { builtinRegistry, describeRegistry, loadPlugins } from './plugins.mjs';
+import { entitiesOf, entityLink, interfacesOf } from '../viewer/diff.js';
 export { projectPath } from './paths.mjs';
+// Kept for existing imports of these helpers from the package root.
+export {
+  operationList,
+  localRef,
+  resolveObject,
+  schemaValidator,
+} from './plugins/openapi/document.mjs';
 
-const methods = new Set(['get', 'post', 'put', 'patch', 'delete', 'options', 'head', 'trace']);
 export const packageRoot = path.resolve(import.meta.dirname, '..');
 
 export async function readProject(root, relative) {
@@ -67,112 +73,105 @@ async function fingerprint(root, inputs) {
   return hash.digest('hex');
 }
 
-export function operationList(doc) {
-  return Object.entries(doc.paths ?? {}).flatMap(([url, rawItem]) => {
-    const item = resolveObject(doc, rawItem);
-    return Object.entries(item)
-      .filter(([method]) => methods.has(method))
-      .map(([method, op]) => {
-        const parameters = new Map();
-        for (const list of [item.parameters ?? [], op.parameters ?? []]) {
-          const seen = new Set();
-          for (const raw of list) {
-            const param = resolveObject(doc, raw),
-              key = JSON.stringify([param.in, param.name]);
-            if (seen.has(key))
-              throw new Error(
-                `Duplicate parameter ${param.name} at ${method.toUpperCase()} ${url}`,
-              );
-            seen.add(key);
-            parameters.set(key, param);
-          }
-        }
-        return {
-          ...op,
-          method: method.toUpperCase(),
-          path: url,
-          parameters: [...parameters.values()],
-          requestBody: op.requestBody ? resolveObject(doc, op.requestBody) : undefined,
-          responses: Object.fromEntries(
-            Object.entries(op.responses ?? {}).map(([status, response]) => [
-              status,
-              resolveObject(doc, response),
-            ]),
-          ),
-          rules: op['x-mhproto-rules'] ?? op['x-clauses'] ?? [],
-        };
-      });
-  });
-}
-
-export function localRef(doc, ref) {
-  if (typeof ref !== 'string' || !ref.startsWith('#/'))
-    throw new Error(`External reference unsupported in V0: ${ref}`);
-  let node = doc;
-  for (const part of decodeURIComponent(ref.slice(2)).split('/')) {
-    const key = part.replaceAll('~1', '/').replaceAll('~0', '~');
-    node = node && Object.hasOwn(node, key) ? node[key] : undefined;
+// `interface: file` is shorthand for `interfaces: [{ adapter: openapi, file }]`.
+function interfaceEntries(definition) {
+  if (definition.interface && definition.interfaces)
+    throw new Error(`${definition.id}: use interface or interfaces, not both`);
+  const entries = definition.interface
+    ? [{ adapter: 'openapi', file: definition.interface }]
+    : (definition.interfaces ?? []);
+  const adapters = new Set();
+  for (const { adapter } of entries) {
+    if (adapters.has(adapter))
+      throw new Error(`${definition.id}: list the ${adapter} interface once per capability`);
+    adapters.add(adapter);
   }
-  if (node === undefined) throw new Error(`Unresolved reference: ${ref}`);
-  return node;
+  return entries;
 }
 
-export function resolveObject(doc, object, seen = new Set()) {
-  if (!object?.$ref) return object;
-  if (seen.has(object.$ref)) throw new Error(`Cyclic OpenAPI object reference: ${object.$ref}`);
-  const next = new Set(seen).add(object.$ref);
-  const resolved = resolveObject(doc, localRef(doc, object.$ref), next);
-  if (!resolved || typeof resolved !== 'object' || Array.isArray(resolved))
-    throw new Error(`OpenAPI object reference must resolve to an object: ${object.$ref}`);
+function normaliseEntities(loaded, item, registry, where) {
+  if (!loaded || typeof loaded !== 'object' || !Array.isArray(loaded.entities))
+    throw new Error(`${where}: load() must return { entities: [...] }`);
+  const strings = (value) =>
+    value === undefined || (Array.isArray(value) && value.every((v) => typeof v === 'string'));
+  const entities = loaded.entities.map((entity) => {
+    if (!entity || typeof entity !== 'object')
+      throw new Error(`${where}: every entity must be an object`);
+    if (!registry.kinds.has(entity.kind))
+      throw new Error(`${where}: entity kind "${entity.kind}" is not declared by any plugin`);
+    if (!strings(entity.rules)) throw new Error(`${where}: entity rules must be rule ID strings`);
+    if (entity.links !== undefined && !Array.isArray(entity.links))
+      throw new Error(`${where}: entity links must be an array`);
+    return {
+      adapter: item.adapter,
+      file: item.file,
+      kind: entity.kind,
+      id: entity.id,
+      ...(entity.title !== undefined ? { title: String(entity.title) } : {}),
+      ...(entity.summary !== undefined ? { summary: String(entity.summary) } : {}),
+      rules: entity.rules ?? [],
+      links: (entity.links ?? []).map(entityLink),
+      ...(entity.data !== undefined ? { data: entity.data } : {}),
+    };
+  });
+  try {
+    JSON.stringify([entities, loaded.meta]);
+  } catch {
+    throw new Error(`${where}: entities and meta must be plain JSON`);
+  }
+  return entities;
+}
+
+async function loadInterface(root, definition, item, registry) {
+  const provider = registry.adapters.get(item.adapter);
+  if (!provider)
+    throw new Error(
+      `${definition.id}: no plugin provides the "${item.adapter}" interface. Add its plugin to mhproto.yaml.`,
+    );
+  const where = `${definition.id}: ${item.adapter} interface ${item.file}`;
+  const readText = (relative) => readProject(root, relative);
+  const loaded = await provider.adapter.load({
+    root,
+    file: item.file,
+    options: structuredClone(item.options ?? {}),
+    capability: structuredClone(definition),
+    readText,
+    readYaml: async (relative) => parse(await readText(relative)),
+    list: async (relative) => (await readdir(await projectPath(root, relative))).sort(),
+  });
+  const entities = normaliseEntities(loaded, item, registry, where);
   return {
-    ...resolved,
-    ...Object.fromEntries(
-      ['summary', 'description'].filter((k) => Object.hasOwn(object, k)).map((k) => [k, object[k]]),
-    ),
+    adapter: item.adapter,
+    file: item.file,
+    document: loaded.document,
+    meta: loaded.meta,
+    entities,
   };
 }
 
-export function schemaValidator(doc) {
-  const ajv = new Ajv({ strict: false, allErrors: true, validateFormats: true });
-  addFormats(ajv);
-  const compiled = new Map();
-  return (schema, data) => {
-    if (!compiled.has(schema)) {
-      const wrapper =
-        typeof schema === 'boolean' ? schema : { ...schema, components: doc.components ?? {} };
-      compiled.set(schema, ajv.compile(wrapper));
-    }
-    const validate = compiled.get(schema);
-    return validate(data)
-      ? []
-      : validate.errors.map((e) => `${e.instancePath || '/'} ${e.message}`);
-  };
-}
-
-async function loadCapability(root, definition, system) {
+async function loadCapability(root, definition, system, registry) {
   const prose = await readProject(root, definition.spec);
-  const doc = assertShape(
-    'openapi',
-    parse(await readProject(root, definition.interface)),
-    definition.interface,
-  );
-  const examples = assertShape(
-    'examples',
-    parse(await readProject(root, definition.examples)),
-    definition.examples,
-  ).examples;
-  const checks = assertShape(
-    'checks',
-    parse(await readProject(root, definition.checks)),
-    definition.checks,
-  ).checks;
+  const interfaces = [];
+  for (const item of interfaceEntries(definition))
+    interfaces.push(await loadInterface(root, definition, item, registry));
+  const examples = definition.examples
+    ? assertShape(
+        'examples',
+        parse(await readProject(root, definition.examples)),
+        definition.examples,
+      ).examples
+    : [];
+  const checks = definition.checks
+    ? assertShape('checks', parse(await readProject(root, definition.checks)), definition.checks)
+        .checks
+    : [];
   const digest = await fingerprint(root, [
     'mhproto.yaml',
     ...(system ? [system] : []),
     definition.spec,
-    definition.interface,
-    definition.examples,
-    definition.checks,
+    ...interfaces.map((i) => i.file),
+    ...(definition.examples ? [definition.examples] : []),
+    ...(definition.checks ? [definition.checks] : []),
     ...(definition.sources ?? []),
     ...checks.flatMap((c) => c.files ?? []),
   ]);
@@ -185,20 +184,36 @@ async function loadCapability(root, definition, system) {
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
   }
+  const openapi = interfaces.find((i) => i.adapter === 'openapi');
   return {
     ...definition,
     prose,
     rules: extractRules(prose),
-    openapi: doc,
-    operations: operationList(doc),
+    // The OpenAPI view the viewer renders; its entities are derived from it (entitiesOf).
+    ...(openapi
+      ? {
+          openapi: openapi.document,
+          operations: openapi.entities.filter((e) => e.kind === 'operation').map((e) => e.data),
+          transitions: openapi.document['x-phase-transitions'] ?? [],
+          nonTransitions: openapi.document['x-phase-unchanged-by'] ?? [],
+        }
+      : {}),
+    interfaces: interfaces.map(({ adapter, file, document, meta }) => {
+      const item = { adapter, file, ...(meta !== undefined ? { meta } : {}) };
+      // Adapter hooks read documents in memory; models and snapshots do not repeat them.
+      if (adapter !== 'openapi')
+        Object.defineProperty(item, 'document', { value: document, enumerable: false });
+      return item;
+    }),
+    entities: interfaces.filter((i) => i.adapter !== 'openapi').flatMap((i) => i.entities),
     files: {
       spec: definition.spec,
-      interface: definition.interface,
-      examples: definition.examples,
-      checks: definition.checks,
+      ...Object.fromEntries(
+        interfaces.map((i) => [i.adapter === 'openapi' ? 'interface' : i.adapter, i.file]),
+      ),
+      ...(definition.examples ? { examples: definition.examples } : {}),
+      ...(definition.checks ? { checks: definition.checks } : {}),
     },
-    transitions: doc['x-phase-transitions'] ?? [],
-    nonTransitions: doc['x-phase-unchanged-by'] ?? [],
     examples,
     checks,
     digest,
@@ -219,6 +234,7 @@ export async function loadProject(root = process.cwd()) {
       throw new Error(`Invalid or duplicate capability id: ${cap.id}`);
     ids.add(cap.id);
   }
+  const registry = await loadPlugins(root, config);
   let visuals = [];
   try {
     visuals = parse(await readProject(root, visualsFile))?.visuals;
@@ -226,16 +242,21 @@ export async function loadProject(root = process.cwd()) {
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
   }
-  return {
+  const project = {
     root,
     name: config.name ?? path.basename(root),
     visuals,
     system: config.system ? await readProject(root, config.system) : '',
+    ...describeRegistry(registry),
     capabilities: await Promise.all(
-      config.capabilities.map((c) => loadCapability(root, c, config.system)),
+      config.capabilities.map((c) => loadCapability(root, c, config.system, registry)),
     ),
   };
+  Object.defineProperty(project, 'registry', { value: registry });
+  return project;
 }
+
+export const registryOf = (project) => project.registry ?? builtinRegistry();
 
 export async function validateProject(project) {
   const issues = [];
@@ -273,9 +294,17 @@ export async function validateProject(project) {
       }
     }
   }
+  const registry = registryOf(project);
+  const capabilities = new Map(project.capabilities.map((cap) => [cap.id, cap]));
+  const entityKey = (kind, id) => JSON.stringify([kind, id]);
+  const entityKeys = new Map(
+    project.capabilities.map((cap) => [
+      cap.id,
+      new Set(entitiesOf(cap).map((e) => entityKey(e.kind, e.id))),
+    ]),
+  );
   for (const cap of project.capabilities) {
     const rules = new Set(),
-      operations = new Set(),
       examples = new Set(),
       checkIds = new Set();
     for (const rule of cap.rules) {
@@ -283,104 +312,60 @@ export async function validateProject(project) {
       rules.add(rule.id);
     }
     if (!rules.size) issue(cap, 'error', 'No rules found: use - **CAP-RULE-1** text');
-    if (
-      cap.openapi?.openapi !== '3.1.0' &&
-      cap.openapi?.openapi !== '3.1.1' &&
-      cap.openapi?.openapi !== '3.1.2'
-    )
-      issue(cap, 'error', 'V0 supports OpenAPI 3.1 JSON Schema contracts');
-    if (!cap.openapi?.info?.title || !cap.openapi?.info?.version)
-      issue(cap, 'error', 'OpenAPI info.title and info.version are required');
-    let validates;
-    try {
-      validates = schemaValidator(cap.openapi);
-    } catch (error) {
-      issue(cap, 'error', error.message);
-    }
     const cite = (id, context) => {
       if (!rules.has(id)) issue(cap, 'error', `${context} references missing rule ${id}`);
     };
-    const walk = (node) => {
-      if (!node || typeof node !== 'object') return;
-      if (typeof node.$ref === 'string') {
-        try {
-          localRef(cap.openapi, node.$ref);
-        } catch (e) {
-          issue(cap, 'error', e.message);
-        }
-      }
-      for (const value of Object.values(node)) walk(value);
-    };
-    walk(cap.openapi);
-    const validateData = (schema, data, context) => {
-      if (schema === undefined || !validates) return;
+    const entities = entitiesOf(cap);
+    const hasEntity = (kind, id) => entityKeys.get(cap.id).has(entityKey(kind, id));
+    const adapterContext = (item) => ({
+      project,
+      capability: cap,
+      interface: item,
+      entities: entities.filter((e) => e.adapter === item.adapter),
+      error: (message) => issue(cap, 'error', message),
+      warning: (message) => issue(cap, 'warning', message),
+      cite,
+    });
+    const adapters = interfacesOf(cap).map((item) => ({
+      item,
+      hooks: registry.adapters.get(item.adapter)?.adapter ?? {},
+    }));
+    for (const { item, hooks } of adapters) {
       try {
-        for (const error of validates(schema, data)) issue(cap, 'error', `${context}: ${error}`);
+        await hooks.validate?.(
+          { document: item.document, entities: adapterContext(item).entities, meta: item.meta },
+          adapterContext(item),
+        );
       } catch (error) {
-        issue(cap, 'error', `${context}: ${error.message}`);
-      }
-    };
-    const validateMedia = (media, context) => {
-      if (media.schema !== undefined) {
-        try {
-          validates?.(media.schema, undefined);
-        } catch (error) {
-          issue(cap, 'error', `${context} schema: ${error.message}`);
-        }
-      }
-      if ('example' in media) validateData(media.schema, media.example, context);
-      for (const [name, raw] of Object.entries(media.examples ?? {})) {
-        try {
-          const example = resolveObject(cap.openapi, raw);
-          if (Object.hasOwn(example, 'value'))
-            validateData(media.schema, example.value, `${context} example ${name}`);
-        } catch (error) {
-          issue(cap, 'error', `${context} example ${name}: ${error.message}`);
-        }
-      }
-    };
-    for (const [name, schema] of Object.entries(cap.openapi.components?.schemas ?? {})) {
-      try {
-        validates?.(schema, undefined);
-      } catch (e) {
-        issue(cap, 'error', `Schema ${name}: ${e.message}`);
+        issue(cap, 'error', `${item.adapter} interface ${item.file}: ${error.message}`);
       }
     }
-    for (const op of cap.operations) {
-      if (!op.operationId || operations.has(op.operationId))
-        issue(cap, 'error', `Missing or duplicate operationId at ${op.method} ${op.path}`);
-      operations.add(op.operationId);
-      if (!op.responses || !Object.keys(op.responses).length)
-        issue(cap, 'error', `${op.operationId} has no responses`);
-      for (const id of op.rules) cite(id, op.operationId);
-      if (!op.rules.length) issue(cap, 'warning', `${op.operationId} has no behaviour links`);
-      for (const param of op.path.matchAll(/\{([^}]+)\}/g)) {
-        if (
-          !op.parameters.some((p) => p.in === 'path' && p.name === param[1] && p.required === true)
-        )
-          issue(cap, 'error', `${op.operationId} is missing required path parameter ${param[1]}`);
+    const seen = new Set();
+    for (const entity of entities) {
+      const key = entityKey(entity.kind, entity.id);
+      if (typeof entity.id !== 'string' || !entity.id || seen.has(key))
+        issue(
+          cap,
+          'error',
+          `Missing or duplicate ${entity.kind} id at ${entity.title ?? entity.file}`,
+        );
+      seen.add(key);
+      for (const id of entity.rules) cite(id, entity.id);
+      if (!entity.rules.length && registry.kinds.get(entity.kind)?.linkRequired !== false)
+        issue(cap, 'warning', `${entity.id} has no behaviour links`);
+      for (const link of entity.links) {
+        const target = link.capability ?? cap.id;
+        if (!capabilities.has(target))
+          issue(cap, 'error', `${entity.id} links to missing capability ${target}`);
+        else if (!entityKeys.get(target).has(entityKey(link.kind, link.id)))
+          issue(cap, 'error', `${entity.id} links to missing ${link.kind} ${link.id}`);
       }
-      for (const condition of op['x-preconditions'] ?? [])
-        if (condition.fails?.clause) cite(condition.fails.clause, op.operationId);
-      for (const param of op.parameters)
-        validateMedia(param, `${op.operationId} ${param.in} parameter ${param.name}`);
-      for (const [status, response] of Object.entries(op.responses ?? {})) {
-        const item = resolveObject(cap.openapi, response);
-        for (const e of item?.['x-error-codes'] ?? [])
-          if (e.clause) cite(e.clause, `${op.operationId}/${status}`);
-        for (const media of Object.values(item?.content ?? {}))
-          validateMedia(media, `${op.operationId} response ${status}`);
-      }
-      for (const media of Object.values(op.requestBody?.content ?? {}))
-        validateMedia(media, `${op.operationId} request`);
     }
-    for (const transition of [...cap.transitions, ...cap.nonTransitions])
-      if (transition.clause) cite(transition.clause, 'Transition');
     for (const id of cap.presentation?.operationOrder ?? [])
-      if (!operations.has(id))
+      if (!hasEntity('operation', id))
         issue(cap, 'error', `Presentation references missing operation ${id}`);
     for (const [id, presentation] of Object.entries(cap.presentation?.operations ?? {})) {
-      if (!operations.has(id))
+      if (!hasEntity('operation', id))
         issue(cap, 'error', `Presentation references missing operation ${id}`);
       for (const rule of [
         ...(presentation.rules ?? []),
@@ -399,30 +384,12 @@ export async function validateProject(project) {
         issue(cap, 'error', `${example.id} requires given, when and then`);
       for (const id of example.rules ?? []) cite(id, example.id);
       for (const id of example.operations ?? [])
-        if (!operations.has(id))
+        if (!hasEntity('operation', id))
           issue(cap, 'error', `${example.id} references missing operation ${id}`);
-      if (example.request) {
-        const op = cap.operations.find((o) => o.operationId === example.request.operation);
-        if (!op) issue(cap, 'error', `${example.id} request references missing operation`);
-        else {
-          const schema = resolveObject(cap.openapi, op.requestBody)?.content?.['application/json']
-            ?.schema;
-          if (schema !== undefined)
-            validateData(schema, example.request.body, example.id + ' request');
-          if (example.response) {
-            const code = String(example.response.status);
-            const response =
-              op.responses?.[code] ?? op.responses?.[code[0] + 'XX'] ?? op.responses?.default;
-            if (!response) issue(cap, 'error', `${example.id} has undeclared response status`);
-            else
-              validateData(
-                response.content?.['application/json']?.schema,
-                example.response.body,
-                example.id + ' response',
-              );
-          }
-        }
-      }
+      if (example.request && !hasEntity('operation', example.request.operation))
+        issue(cap, 'error', `${example.id} request references missing operation`);
+      for (const { item, hooks } of adapters)
+        hooks.validateExample?.(example, adapterContext(item));
     }
     for (const check of cap.checks) {
       if (!check.id || checkIds.has(check.id))
@@ -466,6 +433,15 @@ export async function validateProject(project) {
         'warning',
         'Verification evidence is stale; spec or tracked implementation changed',
       );
+  }
+  for (const plugin of registry.plugins) {
+    const report = (level) => (message, capability) =>
+      issue({ id: capability ?? plugin.name }, level, message);
+    try {
+      await plugin.validate?.(project, { error: report('error'), warning: report('warning') });
+    } catch (error) {
+      issue({ id: plugin.name }, 'error', `Plugin ${plugin.name}: ${error.message}`);
+    }
   }
   return issues;
 }

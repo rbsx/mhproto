@@ -1,55 +1,100 @@
 // Scoped, deterministic retrieval. Images, logs and repeated schemas stay outside packets.
-import { localRef } from './core.mjs';
-export function operationRuleIds(cap, op) {
-  const p = cap.presentation?.operations?.[op.operationId] ?? {};
-  return [
-    ...new Set(
-      [
-        ...(op.rules ?? []),
-        ...(op['x-preconditions'] ?? []).map((x) => x.fails?.clause),
-        ...Object.values(op.responses ?? {}).flatMap((r) =>
-          (r['x-error-codes'] ?? []).map((x) => x.clause),
-        ),
-        ...(p.rules ?? []),
-        ...(p.ruleGroups ?? []).flatMap((g) => g.rules ?? []),
-      ].filter(Boolean),
-    ),
-  ];
-}
+import { builtinRegistry } from './plugins.mjs';
+import { entitiesOf, entityLink, interfacesOf } from '../viewer/diff.js';
+export { operationRuleIds } from '../viewer/diff.js';
+
 const pick = (value, keys) =>
   Object.fromEntries(keys.filter((k) => value[k] !== undefined).map((k) => [k, value[k]]));
-const schemaRefs = (value) => {
-  const names = new Set();
-  const visit = (node) => {
-    if (!node || typeof node !== 'object') return;
-    const match = node.$ref?.match(/^#\/components\/schemas\/([^/]+)(?:\/.*)?$/);
-    if (match) names.add(decodeURIComponent(match[1]).replaceAll('~1', '/').replaceAll('~0', '~'));
-    for (const item of Object.values(node)) visit(item);
-  };
-  visit(value);
-  return [...names];
-};
-function rootSchema(cap, value) {
-  const name = value?.$ref?.match(/^#\/components\/schemas\/([^/]+)$/)?.[1];
-  if (!name) return value;
-  const schema = localRef(cap.openapi, value.$ref);
-  return {
-    name: decodeURIComponent(name).replaceAll('~1', '/').replaceAll('~0', '~'),
-    ...(typeof schema === 'boolean' ? { schema } : schema),
-    ...Object.fromEntries(Object.entries(value).filter(([key]) => key !== '$ref')),
-  };
-}
 function evidence(cap, check) {
   if (!cap.evidence) return 'unchecked';
   if (cap.evidence.stale || cap.evidence.changedDuringRun) return 'stale';
   return cap.evidence.results.find((r) => r.id === check.id)?.status ?? 'unchecked';
 }
+const summary = (entity) => pick(entity, ['kind', 'id', 'title', 'summary']);
+const otherEntities = (cap) => entitiesOf(cap).filter((e) => e.adapter !== 'openapi');
+// Sections every packet can contain, whatever the interface.
+function select(fields, sections, hidden = ['sources']) {
+  const selected = sections
+    ? sections.split(',')
+    : Object.keys(fields).filter((key) => !hidden.includes(key));
+  if (selected.some((k) => !(k in fields)))
+    throw new Error('Sections: ' + Object.keys(fields).join(','));
+  return Object.fromEntries(selected.map((k) => [k, fields[k]]));
+}
+function packetContext(project, cap, entity, visualMetadata, sections) {
+  const examplesFor = (e) =>
+    cap.examples.filter((x) => x.rules?.some((id) => e.rules.includes(id)));
+  const checksFor = (e) => {
+    const examples = examplesFor(e);
+    return cap.checks
+      .filter(
+        (c) =>
+          c.rules?.some((id) => e.rules.includes(id)) ||
+          c.examples?.some((id) => examples.some((x) => x.id === id)),
+      )
+      .map((c) => ({ ...pick(c, ['id', 'title', 'rules', 'examples']), status: evidence(cap, c) }));
+  };
+  const visuals = (e) =>
+    visualMetadata.filter(
+      (v) => v.target.capability === cap.id && v.target.kind === e.kind && v.target.id === e.id,
+    );
+  const entities = entitiesOf(cap);
+  const context = {
+    project,
+    capability: cap,
+    interface: interfacesOf(cap).find((i) => i.adapter === entity.adapter),
+    visualMetadata,
+    evidence: (check) => evidence(cap, check),
+    rules: (ids) => cap.rules.filter((r) => ids.includes(r.id)),
+    examples: (e) =>
+      examplesFor(e).map((x) => pick(x, ['id', 'title', 'rules', 'given', 'when', 'then'])),
+    checks: checksFor,
+    visuals,
+    sources: (e) => ({ file: e.file, implementation: cap.sources ?? [] }),
+    select: (fields, options = {}) => select(fields, sections, options.hidden),
+    defaults: (e) => ({
+      definition: e.data,
+      links: e.links.map((link) => {
+        const target = link.capability
+          ? project.capabilities.find((c) => c.id === link.capability)
+          : cap;
+        const found =
+          target && entitiesOf(target).find((x) => x.kind === link.kind && x.id === link.id);
+        return { ...link, ...(found?.title ? { title: found.title } : {}) };
+      }),
+      linkedFrom: entities
+        .filter((x) =>
+          x.links.some(
+            (l) => (l.capability ?? cap.id) === cap.id && l.kind === e.kind && l.id === e.id,
+          ),
+        )
+        .map(summary),
+      behaviour: { rules: cap.rules.filter((r) => e.rules.includes(r.id)) },
+      examples: context.examples(e),
+      checks: checksFor(e),
+      visuals: visuals(e),
+      sources: context.sources(e),
+    }),
+  };
+  return context;
+}
+function entityPacket(project, cap, entity, visualMetadata, sections) {
+  const registry = project.registry ?? builtinRegistry();
+  const context = packetContext(project, cap, entity, visualMetadata, sections);
+  const packet = registry.adapters.get(entity.adapter)?.adapter.packet;
+  return packet
+    ? packet(entity, context)
+    : { entity: summary(entity), ...context.select(context.defaults(entity)) };
+}
+
 export function contextPacket(project, options = {}) {
-  const selectors = ['operation', 'rule', 'schema', 'example', 'check', 'visual'].filter(
+  const selectors = ['operation', 'entity', 'rule', 'schema', 'example', 'check', 'visual'].filter(
     (k) => options[k],
   );
   if (selectors.length > 1)
-    throw new Error('Choose one selector: operation, rule, schema, example, check or visual');
+    throw new Error(
+      'Choose one selector: operation, entity, rule, schema, example, check or visual',
+    );
   const visualMetadata = (project.visuals ?? []).map((v) =>
     pick(v, ['id', 'title', 'caption', 'kind', 'target', 'file', 'url', 'mime', 'sha256']),
   );
@@ -62,6 +107,7 @@ export function contextPacket(project, options = {}) {
       instruction: 'Open the local file or design link only when the visual is needed.',
     };
   }
+  const anyOthers = project.capabilities.some((c) => otherEntities(c).length);
   if (!options.capability && !selectors.length)
     return {
       project: project.name,
@@ -69,9 +115,14 @@ export function contextPacket(project, options = {}) {
         id: c.id,
         title: c.title,
         url: c.url,
-        operations: c.operations.map((o) => pick(o, ['operationId', 'method', 'path', 'summary'])),
+        operations: (c.operations ?? []).map((o) =>
+          pick(o, ['operationId', 'method', 'path', 'summary']),
+        ),
+        ...(otherEntities(c).length ? { entities: otherEntities(c).map(summary) } : {}),
       })),
-      read: 'mhproto context --capability ID --operation ID; use --rule, --schema, --example, --check or --visual for detail.',
+      read: anyOthers
+        ? 'mhproto context --capability ID --operation ID or --entity KIND:ID; use --rule, --schema, --example, --check or --visual for detail.'
+        : 'mhproto context --capability ID --operation ID; use --rule, --schema, --example, --check or --visual for detail.',
     };
   const cap = options.capability
     ? project.capabilities.find((c) => c.id === options.capability)
@@ -80,15 +131,25 @@ export function contextPacket(project, options = {}) {
       : null;
   if (!cap) throw new Error('Select a known --capability ID');
   const base = { project: project.name, capability: cap.id, digest: cap.digest };
-  if (selectors.length && !options.operation) {
+  const target = options.entity
+    ? entityLink(options.entity)
+    : options.operation
+      ? { kind: 'operation', id: options.operation }
+      : options.schema
+        ? { kind: 'schema', id: options.schema }
+        : null;
+  if (target) {
+    if (!target.kind) throw new Error('Use --entity KIND:ID, for example --entity table:orders');
+    const entity = entitiesOf(cap).find((e) => e.kind === target.kind && e.id === target.id);
+    if (!entity) throw new Error(`Unknown ${target.kind}: ${target.id}`);
+    return { ...base, ...entityPacket(project, cap, entity, visualMetadata, options.section) };
+  }
+  if (selectors.length) {
     const kind = selectors[0],
       id = options[kind];
-    const item =
-      kind === 'schema'
-        ? cap.openapi.components?.schemas?.[id]
-        : cap[kind === 'rule' ? 'rules' : kind === 'example' ? 'examples' : 'checks'].find(
-            (x) => x.id === id,
-          );
+    const item = cap[kind === 'rule' ? 'rules' : kind === 'example' ? 'examples' : 'checks'].find(
+      (x) => x.id === id,
+    );
     if (item === undefined) throw new Error(`Unknown ${kind}: ${id}`);
     const result = {
       ...base,
@@ -107,114 +168,22 @@ export function contextPacket(project, options = {}) {
           'durationMs',
         ]),
       };
-    if (kind === 'schema') result.referencedSchemas = schemaRefs(item);
     return result;
   }
-  if (!options.operation)
-    return {
-      ...base,
-      ...pick(cap, ['title', 'description', 'url']),
-      operations: cap.operations.map((o) => pick(o, ['operationId', 'method', 'path', 'summary'])),
-      rules: cap.rules.map((r) => r.id),
-      examples: cap.examples.map((e) => ({ id: e.id, title: e.title })),
-      visuals: visualMetadata.filter(
-        (v) => v.target.capability === cap.id && v.target.kind === 'feature',
-      ),
-      sources: cap.files,
-    };
-  const op = cap.operations.find((o) => o.operationId === options.operation);
-  if (!op) throw new Error(`Unknown operation: ${options.operation}`);
-  const p = cap.presentation?.operations?.[op.operationId] ?? {},
-    ids = operationRuleIds(cap, op);
-  const grouped = new Set((p.ruleGroups ?? []).flatMap((g) => g.rules ?? []));
-  const examples = cap.examples.filter((e) => e.operations?.includes(op.operationId));
-  const request = {
-    parameters: (op.parameters ?? []).map((p) =>
-      Object.fromEntries(
-        Object.entries(p).filter(([key]) => !['example', 'examples'].includes(key)),
-      ),
-    ),
-    body: rootSchema(cap, op.requestBody?.content?.['application/json']?.schema),
-    required: op.requestBody?.required,
-  };
-  const response = Object.fromEntries(
-    Object.entries(op.responses ?? {})
-      .filter(([status]) => /^2/.test(status))
-      .map(([status, r]) => [
-        status,
-        {
-          description: r.description,
-          schema: rootSchema(cap, r.content?.['application/json']?.schema),
-        },
-      ]),
-  );
-  const errorResponses = Object.entries(op.responses ?? {}).filter(
-    ([status]) => !/^2/.test(status),
-  );
-  const errorSchemas = [
-    ...new Map(
-      errorResponses
-        .map(([, r]) => rootSchema(cap, r.content?.['application/json']?.schema))
-        .filter((schema) => schema !== undefined)
-        .map((s) => [JSON.stringify(s), s]),
-    ).values(),
-  ];
-  const fields = {
-    request,
-    response,
-    behaviour: {
-      rules: cap.rules.filter((r) => ids.includes(r.id) && !grouped.has(r.id)),
-      preconditions: (op['x-preconditions'] ?? []).map((x) =>
-        pick(x, ['needs', 'requires', 'description', 'fails']),
-      ),
-      deferredGroups: (p.ruleGroups ?? []).map((g) => ({
-        title: g.title,
-        rules: g.rules,
-        read: 'Fetch each --rule ID before changing this behaviour.',
-      })),
-    },
-    errors: {
-      cases: errorResponses.flatMap(([status, r]) =>
-        (r['x-error-codes'] ?? [{ when: r.description }]).map((e) => ({ status, ...e })),
-      ),
-      schemas: errorSchemas,
-    },
-    examples: examples.map((e) => pick(e, ['id', 'title', 'rules', 'given', 'when', 'then'])),
-    checks: cap.checks
-      .filter(
-        (c) =>
-          c.rules?.some((id) => ids.includes(id)) ||
-          c.examples?.some((id) => examples.some((e) => e.id === id)),
-      )
-      .map((c) => ({ ...pick(c, ['id', 'title', 'rules', 'examples']), status: evidence(cap, c) })),
-    visuals: visualMetadata.filter(
-      (v) =>
-        v.target.capability === cap.id &&
-        ((v.target.id === op.operationId &&
-          ['operation', 'request', 'response', 'field'].includes(v.target.kind)) ||
-          (v.target.kind === 'schema' && schemaRefs(op).includes(v.target.id)) ||
-          (v.target.kind === 'rule' && ids.includes(v.target.id)) ||
-          (v.target.kind === 'example' && examples.some((e) => e.id === v.target.id))),
-    ),
-    sources: { ...cap.files, implementation: cap.sources },
-  };
-  const selected = options.section
-    ? options.section.split(',')
-    : ['request', 'response', 'behaviour', 'errors', 'examples', 'checks', 'visuals'];
-  if (selected.some((k) => !(k in fields)))
-    throw new Error('Sections: request,response,behaviour,errors,examples,checks,visuals,sources');
-  const result = {
+  return {
     ...base,
-    operation: pick(op, ['operationId', 'method', 'path', 'summary']),
-    ...Object.fromEntries(selected.map((k) => [k, fields[k]])),
+    ...pick(cap, ['title', 'description', 'url']),
+    operations: (cap.operations ?? []).map((o) =>
+      pick(o, ['operationId', 'method', 'path', 'summary']),
+    ),
+    ...(otherEntities(cap).length ? { entities: otherEntities(cap).map(summary) } : {}),
+    rules: cap.rules.map((r) => r.id),
+    examples: cap.examples.map((e) => ({ id: e.id, title: e.title })),
+    visuals: visualMetadata.filter(
+      (v) => v.target.capability === cap.id && v.target.kind === 'feature',
+    ),
+    sources: cap.files,
   };
-  const refs = schemaRefs({
-    request: result.request,
-    response: result.response,
-    errors: result.errors,
-  });
-  if (refs.length) result.referencedSchemas = refs;
-  return result;
 }
 export function encodeContext(packet, maxChars = 12000) {
   if (!Number.isInteger(maxChars) || maxChars < 100)

@@ -3,6 +3,8 @@ import path from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import { parse, stringify } from 'yaml';
 import { atomicWrite, writePath } from './paths.mjs';
+import { builtinRegistry } from './plugins.mjs';
+import { entitiesOf, interfacesOf } from '../viewer/diff.js';
 
 export const visualsFile = 'mhproto/visuals.yaml';
 const queues = new Map();
@@ -29,94 +31,29 @@ export function safeDesignUrl(value) {
     return false;
   }
 }
-function resolve(cap, schema) {
-  let current = schema,
-    seen = new Set();
-  while (current?.$ref) {
-    if (seen.has(current.$ref)) return {};
-    seen.add(current.$ref);
-    let value = cap.openapi;
-    for (const part of current.$ref.slice(2).split('/'))
-      value = value?.[part.replaceAll('~1', '/').replaceAll('~0', '~')];
-    current = value;
-  }
-  return current ?? {};
-}
-function propertyAt(cap, schema, parts) {
-  const s = resolve(cap, schema);
-  if (!parts.length) return s;
-  if (s.anyOf || s.oneOf || s.allOf)
-    return (s.anyOf ?? s.oneOf ?? s.allOf)
-      .map((item) => propertyAt(cap, item, parts))
-      .find((schema) => schema != null);
-  const [part, ...rest] = parts;
-  const child = part === '*' ? s.items : s.properties?.[part];
-  return child !== undefined ? propertyAt(cap, child, rest) : null;
-}
 export function targetError(project, target) {
   if (!target || typeof target !== 'object') return 'Visual requires a target';
   const cap = project.capabilities.find((c) => c.id === target.capability);
   if (!cap) return 'Visual references an unknown feature';
-  const op = cap.operations.find((o) => o.operationId === target.id);
   if (target.kind === 'feature') return null;
-  if (['operation', 'request', 'response', 'field'].includes(target.kind)) {
-    if (!op) return 'Visual references an unknown operation';
-    if (target.kind === 'response' && target.status && !op.responses?.[target.status])
-      return 'Visual references an unknown response';
-    if (target.kind === 'field') {
-      if (
-        !['request', 'response'].includes(target.scope) ||
-        typeof target.path !== 'string' ||
-        !target.path.startsWith('/')
-      )
-        return 'Field visual requires request/response scope and a JSON pointer';
-      let schema;
-      if (target.scope === 'response')
-        schema =
-          op.responses?.[target.status ?? Object.keys(op.responses).find((s) => /^2/.test(s))]
-            ?.content?.['application/json']?.schema;
-      else
-        schema = {
-          type: 'object',
-          properties: {
-            body: op.requestBody?.content?.['application/json']?.schema,
-            ...Object.fromEntries(
-              ['path', 'query', 'header', 'cookie'].map((location) => [
-                location,
-                {
-                  type: 'object',
-                  properties: Object.fromEntries(
-                    (op.parameters ?? [])
-                      .filter((p) => p.in === location)
-                      .map((p) => [p.name, p.schema]),
-                  ),
-                },
-              ]),
-            ),
-          },
-        };
-      if (
-        propertyAt(
-          cap,
-          schema,
-          target.path
-            .slice(1)
-            .split('/')
-            .map((p) => p.replaceAll('~1', '/').replaceAll('~0', '~')),
-        ) == null
-      )
-        return 'Visual references an unknown field';
-    }
-    return null;
-  }
   const items = {
-    schema: Object.keys(cap.openapi.components?.schemas ?? {}),
     example: cap.examples.map((e) => e.id),
     rule: cap.rules.map((r) => r.id),
     check: cap.checks.map((c) => c.id),
   };
-  if (!items[target.kind]) return 'Unsupported visual target';
-  return items[target.kind].includes(target.id)
+  if (items[target.kind])
+    return items[target.kind].includes(target.id)
+      ? null
+      : 'Visual references an unknown ' + target.kind;
+  const registry = project.registry ?? builtinRegistry();
+  for (const item of interfacesOf(cap)) {
+    const error = registry.adapters
+      .get(item.adapter)
+      ?.adapter.visualTarget?.(target, { capability: cap, project });
+    if (error !== undefined) return error;
+  }
+  if (!registry.kinds.has(target.kind)) return 'Unsupported visual target';
+  return entitiesOf(cap).some((e) => e.kind === target.kind && e.id === target.id)
     ? null
     : 'Visual references an unknown ' + target.kind;
 }
