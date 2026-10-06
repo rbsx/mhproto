@@ -2784,8 +2784,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 
-katex@0.16.47 — MIT
-Source: https://registry.npmjs.org/katex/-/katex-0.16.47.tgz
+katex@0.18.11 — MIT
+Source: https://registry.npmjs.org/katex/-/katex-0.18.11.tgz
 Notice: package/LICENSE
 
 The MIT License (MIT)

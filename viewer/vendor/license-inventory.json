@@ -1,5 +1,5 @@
 {
-  "reviewedAt": "2026-10-03",
+  "reviewedAt": "2026-10-06",
   "complete": true,
   "scope": "Source-built Mermaid 12.1.0, esbuild inputs and recursively inspected official parser 2.0.1 chunks. Package-version coverage includes flattened vscode-uri/path-browserify sources. ELK archive and source availability retained.",
   "packages": [
@@ -1090,18 +1090,18 @@
     },
     {
       "package": "katex",
-      "version": "0.16.47",
+      "version": "0.18.11",
       "declaredLicense": "MIT",
       "effectiveLicense": "MIT",
       "reviewBasis": "Package license declaration and retained archive license text.",
       "archive": {
-        "url": "https://registry.npmjs.org/katex/-/katex-0.16.47.tgz",
-        "integrity": "sha512-Eeo8Ys1doU1z+x8AZsPpQu+p/QcZBI5PeOo7QGQdy2x2m0MU/hYagBbGOmXwr5KVbEfVuWv9LpnQWeehogurjg=="
+        "url": "https://registry.npmjs.org/katex/-/katex-0.18.11.tgz",
+        "integrity": "sha512-yvyz/2VMKqoho/35Hat5w37wIEdWJ5ElVMidTAlWrxr5uW4aBGsEpveTmKh18/zw08v/7lGswCPon4OhqmqrTA=="
       },
       "notices": [
         {
           "archivePath": "package/LICENSE",
-          "file": "licenses/katex-0.16.47.txt",
+          "file": "licenses/katex-0.18.11.txt",
           "sha256": "766ccc1f306c885aa45542a9846bbd0a505b27a0374f146778171c2254ce18e3"
         }
       ]
@@ -1446,9 +1446,9 @@
     }
   ],
   "noticeFile": "NOTICE.txt",
-  "noticeSha256": "99479f78c18a300a92f672346193a62986a67941aaabffba6338e3a87988d8dd",
+  "noticeSha256": "c4ec8a8fc6833cdd3d3bbcea3256ae7cee1dba348ac0ffa1600430fbe56e2900",
   "audit": {
-    "checkedAt": "2026-10-03",
+    "checkedAt": "2026-10-06",
     "packageVersions": 79,
     "resultFile": "bundled-audit.json",
     "releaseGate": "No known advisory matches in the recorded exact-version registry audit; recheck before publication."

@@ -10,8 +10,9 @@ HTML labels and keeps invalid diagram sources readable beside an error.
 source archive SHA-256, build package/lock hashes and final bundle hash.
 `scripts/mermaid-build.mjs` extracts unchanged upstream source and uses its official
 Jison/schema plugins and browser build settings with esbuild 0.28.2.
-`tools/mermaid/package-lock.json` selects DOMPurify 3.4.16, js-yaml 4.3.2 and
-Lodash 4.18.1. The upstream prebuilt 12.1.0 artifact still contained affected
+`tools/mermaid/package-lock.json` selects DOMPurify 3.4.16, js-yaml 4.3.2,
+Lodash 4.18.1 and KaTeX 0.18.11 (GHSA-238p-pmpm-9mq7 affects KaTeX before 0.18.2;
+Mermaid 12.1.0 declares ^0.16.47, and its math labels render the same with 0.18.11). The upstream prebuilt 12.1.0 artifact still contained affected
 DOMPurify/js-yaml versions; it is not used here.
 
 The build prepends Mermaid's MIT text, keeps its namespace private in an outer
@@ -59,7 +60,7 @@ names derived in the verifier. All notices travel inside the offline bundle.
 
 ## Security checks and future upgrades
 
-`bundled-audit.json` records the 2026-10-03 live registry advisory response: no known
+`bundled-audit.json` records the 2026-10-06 live registry advisory response: no known
 matches for the recorded versions. `npm run audit:vendor` repeats the exact-version
 check and fails if matches appear. Ordinary root `npm audit` does not inspect
 compiled dependencies hidden inside this renderer. CI runs both audits and also
