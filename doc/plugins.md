@@ -235,26 +235,27 @@ A plugin can also own whole pages, as the built-in OpenAPI plugin does for endpo
 ([`src/plugins/openapi/viewer.js`](../src/plugins/openapi/viewer.js)). These hooks are newer than
 `section` and `summary` and may change before 1.0:
 
-| Hook                                  | Purpose                                                                               |
-| ------------------------------------- | ------------------------------------------------------------------------------------- |
-| `ownsKinds: ['kind', …]`              | Kinds this plugin shows itself; they get no generic section or page.                  |
-| `setup(ui)`                           | Called before each render, for caches such as a type index.                           |
-| `index(project)`                      | Build those caches for a baseline before it is used; throw to reject it.              |
-| `overview(cap, ui)`                   | Markup on the feature page, after its description.                                    |
-| `pages: { segment(cap, id, ui) }`     | `#/features/:feature/<segment>/:id`; returns `{ html, title, change }`.               |
-| `targetUrl(cap, { kind, id })`        | The page for an entity or visual target; `null` if missing, `undefined` if not yours. |
-| `ruleTarget(cap, ruleId)`             | `{ url, note }` of the page that shows a rule.                                        |
-| `exampleTarget(cap, example)`         | `{ url, note }` of the page that shows an example.                                    |
-| `search(cap, matches)`                | `{ lead, trail }` result lists around the generic results.                            |
-| `changeTitle(change)`                 | A title for this plugin's kinds in **Changes**.                                       |
-| `decorate(cap, { changeFor, badge })` | Add comparison badges to this plugin's markup.                                        |
-| `targetVisuals(target)`               | Extra visuals to show with a target, such as a field's under its request.             |
+| Hook                                  | Purpose                                                                                                                              |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `ownsKinds: ['kind', …]`              | Kinds this plugin shows itself; they get no generic section or page.                                                                 |
+| `setup(ui)`                           | Called before each render, for caches such as a type index.                                                                          |
+| `index(project)`                      | Build those caches for a baseline before it is used; throw to reject it.                                                             |
+| `overview(cap, ui)`                   | Markup on the feature page, after its description.                                                                                   |
+| `pages: { segment(cap, id, ui) }`     | `#/features/:feature/<segment>/:id`; returns `{ html, title, change }`. `changes`, `checks`, `entities` and `sources` stay built-in. |
+| `targetUrl(cap, { kind, id })`        | The page for an entity or visual target: `null` when it is yours but missing, `undefined` when it isn't yours.                       |
+| `ruleTarget(cap, ruleId)`             | `{ url, note }` of the page that shows a rule.                                                                                       |
+| `exampleTarget(cap, example)`         | `{ url, note }` of the page that shows an example.                                                                                   |
+| `search(cap, matches)`                | `{ lead, trail }` result lists around the generic results.                                                                           |
+| `changeTitle(change)`                 | A title for this plugin's kinds in **Changes**.                                                                                      |
+| `decorate(cap, { changeFor, badge })` | Add comparison badges to this plugin's markup.                                                                                       |
+| `targetVisuals(target)`               | Extra visuals to show with a target, such as a field's under its request.                                                            |
 
 `html` values follow the same rule as renderers: use `ui.html`, or `ui.raw` for markup you built
 and escaped yourself. The `ui` passed to these hooks also has `ui.text` (the viewer's own blocks
 as strings: attachments, galleries, checks, examples, diagrams, rule links), `ui.model`
 (`canonical`, `entitiesOf`, `openapiView`, `operationRuleIds`) and `ui.state` (`project`,
-`baseline`, `baselineProject`, `comparing`).
+`baseline`, `baselineProject`, `comparing`). A hook that throws is logged and skipped; a page
+that throws shows its error instead.
 
 ## Test and publish
 

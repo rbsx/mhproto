@@ -33,14 +33,25 @@ const featureUrl = (cap) => '#/features/' + encodeURIComponent(cap.id);
 const checkUrl = (cap, check) => featureUrl(cap) + '/checks/' + encodeURIComponent(check.id);
 // Viewer scripts from plugins register with (globalThis.mhprotoViewerPlugins ??= []).push(…).
 const viewerPlugins = () => (globalThis.mhprotoViewerPlugins ?? []).filter(Boolean);
-// The first plugin answer to a hook, ignoring plugins without it.
+// Run a plugin hook; a failing plugin is reported and skipped, never blanks the viewer.
+function call(plugin, hook, ...args) {
+  try {
+    return plugin[hook]?.(...args);
+  } catch (error) {
+    console.error(`MHProto viewer plugin ${plugin.name ?? '?'}: ${hook} failed`, error);
+    return undefined;
+  }
+}
+// The first plugin answer to a hook. `undefined` means "not mine"; `null` is an answer.
 function ask(hook, ...args) {
   for (const plugin of viewerPlugins()) {
-    const answer = plugin[hook]?.(...args);
-    if (answer != null) return answer;
+    const answer = call(plugin, hook, ...args);
+    if (answer !== undefined) return answer;
   }
   return null;
 }
+// Built-in routes plugins cannot replace.
+const shellPages = new Set(['changes', 'checks', 'entities', 'sources']);
 // Entities that get the generic sections and pages; plugins with their own pages own theirs.
 const pluginEntities = (cap) => {
   const owned = new Set(viewerPlugins().flatMap((p) => p.ownsKinds ?? []));
@@ -182,7 +193,7 @@ const pascal = (value) =>
     .map((s) => s[0].toUpperCase() + s.slice(1))
     .join('');
 function visualsForSurface(t) {
-  const extra = new Set(viewerPlugins().flatMap((p) => p.targetVisuals?.(t) ?? []));
+  const extra = new Set(viewerPlugins().flatMap((p) => call(p, 'targetVisuals', t) ?? []));
   return (project.visuals ?? []).filter((v) => sameTarget(v.target, t) || extra.has(v));
 }
 function visualGallery(t) {
@@ -392,7 +403,7 @@ function entitySections(cap) {
 const hookMarkup = (value) => (value?.[trusted] ? value.value : escape(value ?? ''));
 function overview(cap) {
   return `<header><h1>${escape(cap.title ?? cap.id)}</h1>${attachmentBlock(target(cap, 'feature'), escape(cap.description ?? 'Describe what this page loads, shows and lets the user do.'), { className: 'description', label: cap.title ?? cap.id })}${cap.url ? `<p class="feature-url"><span>URL</span><code>${escape(cap.url)}</code></p>` : ''}</header>${viewerPlugins()
-    .map((p) => hookMarkup(p.overview?.(cap, pluginUi())))
+    .map((p) => hookMarkup(call(p, 'overview', cap, pluginUi())))
     .join(
       '',
     )}${entitySections(cap)}${markdownDiagrams(cap.prose, 'Play states')}${checksSection(cap)}`;
@@ -570,7 +581,8 @@ function decorateComparison(state) {
             ? changeFor(cap, 'feature', cap.id)
             : null;
   if (pageChange) $('#content h1')?.insertAdjacentHTML('beforeend', changeBadge(pageChange));
-  for (const plugin of viewerPlugins()) plugin.decorate?.(cap, { changeFor, badge: changeBadge });
+  for (const plugin of viewerPlugins())
+    call(plugin, 'decorate', cap, { changeFor, badge: changeBadge });
   for (const item of document.querySelectorAll('.entity-list>li[data-entity]')) {
     const [kind, id] = JSON.parse(item.dataset.entity);
     item.querySelector('a')?.insertAdjacentHTML('afterend', changeBadge(changeFor(cap, kind, id)));
@@ -591,7 +603,7 @@ function searchResults() {
   for (const cap of project.capabilities) {
     if (matches([cap.title, cap.description, cap.url]))
       found.push({ url: featureUrl(cap), title: cap.title, note: cap.description });
-    const pages = viewerPlugins().map((p) => p.search?.(cap, matches) ?? {});
+    const pages = viewerPlugins().map((p) => call(p, 'search', cap, matches) ?? {});
     for (const page of pages) found.push(...(page.lead ?? []));
     for (const rule of cap.rules)
       if (matches([rule, cap.presentation?.ruleTitles?.[rule.id]])) {
@@ -638,10 +650,22 @@ function render() {
     cap = state.cap;
   comparisonEnabled = state.compare || state.kind === 'changes';
   updateComparison();
-  for (const plugin of viewerPlugins()) plugin.setup?.(pluginUi());
+  for (const plugin of viewerPlugins()) call(plugin, 'setup', pluginUi());
   // Pages a plugin provides, such as OpenAPI's #/features/:feature/api/:operation.
-  const page = state.kind && viewerPlugins().find((p) => p.pages?.[state.kind])?.pages[state.kind];
-  if (page) state.page = page(cap, state.id, pluginUi());
+  const owner =
+    state.kind && !shellPages.has(state.kind) && viewerPlugins().find((p) => p.pages?.[state.kind]);
+  if (owner) {
+    try {
+      state.page = owner.pages[state.kind](cap, state.id, pluginUi());
+    } catch (error) {
+      state.page = {
+        html: markup(
+          `<p class="error">This page could not be shown by the ${escape(owner.name ?? '')} plugin: ${escape(error.message)}</p>`,
+        ),
+        title: 'Error',
+      };
+    }
+  }
   $('#project-name').textContent = project.name;
   $('#search').value = query;
   $('#home').href = 'https://mhproto.dev/';
@@ -1005,7 +1029,13 @@ async function loadPluginScripts(model) {
     await new Promise((resolve) => {
       const script = document.createElement('script');
       script.src = plugin.viewer;
-      script.onload = script.onerror = resolve;
+      script.onload = resolve;
+      // Try again on the next refresh.
+      script.onerror = () => {
+        loadedScripts.delete(plugin.viewer);
+        script.remove();
+        resolve();
+      };
       document.head.append(script);
     });
   }

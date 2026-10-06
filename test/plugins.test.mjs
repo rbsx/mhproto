@@ -614,3 +614,46 @@ test('snapshots with malformed entities are rejected before rendering', async ()
   saved.project.capabilities[0].entities[1].kind = '"><img src=x onerror=alert(1)>';
   assert.throws(() => snapshotProject(saved), /valid MHProto contract/);
 });
+
+test('the OpenAPI view follows edits and comparisons tolerate interfaces without meta', async () => {
+  const project = await model(await sqlProject()),
+    cap = project.capabilities[0];
+  assert.equal(openapiView(cap).openapi.info.title, 'Example API');
+  cap.interfaces[0].meta = { ...cap.interfaces[0].meta, info: { title: 'Renamed', version: '2' } };
+  assert.equal(openapiView(cap).openapi.info.title, 'Renamed');
+  cap.entities.splice(0, 1);
+  assert.equal(openapiView(cap).operations.length, 0);
+  const bare = structuredClone(project);
+  delete bare.capabilities[0].interfaces[0].meta;
+  assert.ok(Array.isArray(compareModels(bare, project)));
+});
+
+test('a throwing page-level hook is contained and built-in routes stay built-in', async () => {
+  const project = await model(await sqlProject());
+  const { window, doc } = await render(project, '#/features/example/sources');
+  window.mhprotoViewerPlugins.push({
+    name: 'rogue',
+    overview() {
+      throw new Error('boom');
+    },
+    pages: {
+      sources: () => ({ html: 'taken' }),
+      crash: () => {
+        throw new Error('page boom');
+      },
+    },
+  });
+  window.console.error = () => {};
+  const go = async (hash) => {
+    const navigation = new Promise((r) => window.addEventListener('hashchange', r, { once: true }));
+    window.location.hash = hash;
+    await navigation;
+    await window.mhprotoReady;
+  };
+  await go('#/features/example/sources?x=1');
+  assert.equal(doc.querySelector('h1').textContent, 'Sources');
+  await go('#/features/example');
+  assert.ok(doc.querySelector('#api .endpoint'), 'other plugins still render');
+  await go('#/features/example/crash/x');
+  assert.match(doc.querySelector('#content .error').textContent, /rogue plugin: page boom/);
+});

@@ -130,10 +130,12 @@ function normaliseCapability(cap) {
     const { openapi: document, operations, transitions, nonTransitions, ...rest } = cap;
     const file = cap.files?.interface;
     const item = { adapter: 'openapi', file, meta: openapiGlobals(document) };
-    const interfaces = cap.interfaces ?? [{ adapter: 'openapi', file }];
+    const interfaces = cap.interfaces ?? [];
     return {
       ...rest,
-      interfaces: interfaces.map((i) => (isOpenapi(i) ? item : i)),
+      interfaces: interfaces.some(isOpenapi)
+        ? interfaces.map((i) => (isOpenapi(i) ? item : i))
+        : [item, ...interfaces],
       entities: [
         ...openapiEntities({ operations, document, file }),
         ...(cap.entities ?? []).filter((e) => !isOpenapi(e)),
@@ -165,8 +167,10 @@ export function openapiView(cap) {
   const item = interfacesOf(cap).find(isOpenapi);
   if (!item) return null;
   const entities = entitiesOf(cap);
+  // Edits replace meta or entities; both invalidate the view.
   const cached = views.get(entities);
-  if (cached?.item === item) return cached.view;
+  if (cached?.item === item && cached.meta === item.meta && cached.count === entities.length)
+    return cached.view;
   const { pathItems, components, ...api } = item.meta ?? {};
   const own = entities.filter(isOpenapi);
   const document = {
@@ -186,7 +190,7 @@ export function openapiView(cap) {
     transitions: document['x-phase-transitions'] ?? [],
     nonTransitions: document['x-phase-unchanged-by'] ?? [],
   };
-  views.set(entities, { item, view });
+  views.set(entities, { item, meta: item.meta, count: entities.length, view });
   return view;
 }
 export function snapshotProject(value) {
@@ -341,9 +345,9 @@ export function compareModels(beforeValue, afterValue) {
       behaviour: behaviourText(cap.prose),
       ...(openapi
         ? {
-            api: openapi.meta,
-            transitions: openapi.meta['x-phase-transitions'] ?? [],
-            nonTransitions: openapi.meta['x-phase-unchanged-by'] ?? [],
+            api: openapi.meta ?? {},
+            transitions: openapi.meta?.['x-phase-transitions'] ?? [],
+            nonTransitions: openapi.meta?.['x-phase-unchanged-by'] ?? [],
           }
         : {}),
       ...(others.length
