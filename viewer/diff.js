@@ -350,16 +350,20 @@ export function compareModels(beforeValue, afterValue) {
     compare(id, 'rule', rules(a), rules(b), 'id');
     const oldEntities = a ? entities(a) : [],
       newEntities = b ? entities(b) : [];
-    for (const kind of new Set([...oldEntities, ...newEntities].map((e) => e.kind))) {
+    const compareKind = (kind) => {
       const pick = (list) =>
-        list.filter((e) => e.kind === kind).map((e) => ({ id: e.id, value: e.value }));
-      const oldMap = new Map(pick(oldEntities).map((e) => [e.id, e.value])),
-        newMap = new Map(pick(newEntities).map((e) => [e.id, e.value]));
+        new Map(list.filter((e) => e.kind === kind).map((e) => [e.id, e.value]));
+      const oldMap = pick(oldEntities),
+        newMap = pick(newEntities);
       for (const entityId of new Set([...oldMap.keys(), ...newMap.keys()]))
         add(id, kind, entityId, oldMap.get(entityId), newMap.get(entityId));
-    }
+    };
+    // OpenAPI types keep their established place after examples and checks.
+    const kinds = [...new Set([...oldEntities, ...newEntities].map((e) => e.kind))];
+    for (const kind of kinds) if (kind !== 'schema') compareKind(kind);
     compare(id, 'example', a?.examples ?? [], b?.examples ?? [], 'id');
     compare(id, 'check', a?.checks ?? [], b?.checks ?? [], 'id');
+    if (kinds.includes('schema')) compareKind('schema');
     compare(
       id,
       'visual',

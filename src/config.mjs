@@ -13,13 +13,8 @@ const ajv = new Ajv({ allErrors: true });
 const pluginEntry = {
   anyOf: [
     text,
-    {
-      type: 'array',
-      minItems: 1,
-      maxItems: 2,
-      items: [text, { type: 'object' }],
-      additionalItems: false,
-    },
+    { type: 'array', items: [text], minItems: 1, maxItems: 1 },
+    { type: 'array', items: [text, { type: 'object' }], minItems: 2, maxItems: 2 },
   ],
 };
 const shapes = {

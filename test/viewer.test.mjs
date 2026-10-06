@@ -7,16 +7,13 @@ import path from 'node:path';
 import os from 'node:os';
 import { JSDOM } from 'jsdom';
 import { packageRoot } from '../src/core.mjs';
-import { model } from '../src/server.mjs';
+import { bundleViewer, model } from '../src/server.mjs';
 import { contractSnapshot } from '../viewer/diff.js';
 async function viewerCode() {
   const [app, diff] = await Promise.all(
     ['app.js', 'diff.js'].map((name) => readFile(path.join(packageRoot, 'viewer', name), 'utf8')),
   );
-  return app.replace(
-    "import { compareModels, contractSnapshot, snapshotProject, canonical } from './diff.js';",
-    () => diff.replace(/^export /gm, ''),
-  );
+  return bundleViewer(app, diff);
 }
 
 async function fixture({

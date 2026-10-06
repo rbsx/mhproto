@@ -1,4 +1,11 @@
-import { compareModels, contractSnapshot, snapshotProject, canonical } from './diff.js';
+import {
+  compareModels,
+  contractSnapshot,
+  snapshotProject,
+  canonical,
+  entitiesOf,
+  operationRuleIds,
+} from './diff.js';
 const $ = (selector) => document.querySelector(selector);
 const escape = (value) =>
   String(value ?? '').replace(
@@ -29,6 +36,55 @@ const endpointUrl = (cap, op, rule) =>
   (rule ? '?rule=' + encodeURIComponent(rule) : '');
 const checkUrl = (cap, check) => featureUrl(cap) + '/checks/' + encodeURIComponent(check.id);
 const typeUrl = (cap, entity) => featureUrl(cap) + '/types/' + encodeURIComponent(entity.id);
+// Entities from interface plugins other than OpenAPI, which keeps its own pages.
+const pluginEntities = (cap) => (cap ? entitiesOf(cap).filter((e) => e.adapter !== 'openapi') : []);
+const kindInfo = (kind) => project?.kinds?.[kind] ?? { label: kind, plural: kind };
+const entityUrl = (cap, entity, rule) =>
+  featureUrl(cap) +
+  '/entities/' +
+  encodeURIComponent(entity.kind) +
+  '/' +
+  encodeURIComponent(entity.id) +
+  (rule ? '?rule=' + encodeURIComponent(rule) : '');
+// Viewer scripts from plugins register renderers with
+// (globalThis.mhprotoViewerPlugins ??= []).push({ name, kinds: { kind: { section, summary } } }).
+const viewerRenderers = () =>
+  Object.assign({}, ...(globalThis.mhprotoViewerPlugins ?? []).map((p) => p?.kinds ?? {}));
+const trusted = Symbol('html');
+const markup = (value) => ({ [trusted]: true, value: String(value) });
+const ui = Object.freeze({
+  escape,
+  raw: markup,
+  // Tagged template: interpolations are escaped unless wrapped with ui.raw or produced by ui.html.
+  html: (strings, ...values) =>
+    markup(
+      strings.reduce(
+        (out, part, i) =>
+          out +
+          part +
+          (i < values.length
+            ? [values[i]]
+                .flat()
+                .map((v) => (v?.[trusted] ? v.value : escape(v)))
+                .join('')
+            : ''),
+        '',
+      ),
+    ),
+  json: (value) => markup(raw(value)),
+  disclosure: (title, body, open) =>
+    markup(disclosure(title, body?.[trusted] ? body.value : escape(body), open)),
+});
+function pluginMarkup(kind, hook, entity, fallback) {
+  const render = viewerRenderers()[kind]?.[hook];
+  if (!render) return fallback();
+  try {
+    const result = render(entity, ui);
+    return result?.[trusted] ? result.value : escape(result ?? '');
+  } catch (error) {
+    return `<p class="error">This ${escape(kindInfo(kind).label.toLowerCase())} could not be shown by its plugin: ${escape(error.message)}</p>${fallback()}`;
+  }
+}
 const typeLink = (cap, entity) => {
   const status = entityChange(cap, entity);
   return `<a class="type-link${status ? ' change-link ' + status : ''}" href="${escape(typeUrl(cap, entity))}"${status ? ` title="${escape(pascal(status))} type"` : ''}>${escape(entity.name)}</a>`;
@@ -194,7 +250,7 @@ function buildEntityIndex(model) {
   for (const cap of model.capabilities) {
     index.caps.set(cap.id, new Map());
     index.nodes.set(cap.id, new WeakMap());
-    for (const [name, schema] of Object.entries(cap.openapi.components?.schemas ?? {}))
+    for (const [name, schema] of Object.entries(cap.openapi?.components?.schemas ?? {}))
       register(cap, name, name, schema, { kind: 'schema', file: cap.files?.interface });
   }
   for (const cap of model.capabilities) {
@@ -313,7 +369,7 @@ function referencedSchemas(cap, schemas) {
       const name = ref.replaceAll('~1', '/').replaceAll('~0', '~');
       if (!names.has(name)) {
         names.add(name);
-        visit(cap.openapi.components?.schemas?.[name]);
+        visit(cap.openapi?.components?.schemas?.[name]);
       }
     }
     for (const [key, value] of Object.entries(node)) if (key !== '$ref') visit(value);
@@ -323,7 +379,7 @@ function referencedSchemas(cap, schemas) {
 }
 function visualsForSurface(t) {
   const cap = project.capabilities.find((c) => c.id === t.capability),
-    op = cap.operations.find((o) => o.operationId === t.id);
+    op = (cap.operations ?? []).find((o) => o.operationId === t.id);
   const schemas =
     t.kind === 'request'
       ? [op?.requestBody, ...(op?.parameters ?? [])]
@@ -418,39 +474,25 @@ function route() {
   // Older exported links still lead to the feature overview.
   const id = parts[0] === 'features' ? parts[1] : parts[0];
   const cap = project.capabilities.find((c) => c.id === id) ?? project.capabilities[0];
+  const entities = parts[0] === 'features' && parts[2] === 'entities';
   return {
     cap,
     kind: parts[0] === 'changes' ? 'changes' : parts[0] === 'features' ? parts[2] : null,
-    id: parts[0] === 'changes' ? parts[1] : parts[3],
+    id: parts[0] === 'changes' ? parts[1] : entities ? parts[4] : parts[3],
+    entityKind: entities ? parts[3] : null,
     rule: new URLSearchParams(params).get('rule'),
     compare: new URLSearchParams(params).get('compare') === '1',
   };
 }
 function orderedOperations(cap) {
   const order = cap.presentation?.operationOrder ?? [];
-  return [...cap.operations].sort(
+  return [...(cap.operations ?? [])].sort(
     (a, b) =>
       (order.includes(a.operationId) ? order.indexOf(a.operationId) : 999) -
       (order.includes(b.operationId) ? order.indexOf(b.operationId) : 999),
   );
 }
 const operationPresentation = (cap, op) => cap.presentation?.operations?.[op.operationId] ?? {};
-function operationRuleIds(cap, op) {
-  const presentation = operationPresentation(cap, op);
-  return [
-    ...new Set(
-      [
-        ...(op.rules ?? []),
-        ...(op['x-preconditions'] ?? []).map((p) => p.fails?.clause),
-        ...Object.values(op.responses ?? {}).flatMap((r) =>
-          (r['x-error-codes'] ?? []).map((e) => e.clause),
-        ),
-        ...(presentation.rules ?? []),
-        ...(presentation.ruleGroups ?? []).flatMap((g) => g.rules ?? []),
-      ].filter(Boolean),
-    ),
-  ];
-}
 function rulesFor(cap, op) {
   const ids = operationRuleIds(cap, op);
   return cap.rules.filter((r) => ids.includes(r.id));
@@ -458,8 +500,10 @@ function rulesFor(cap, op) {
 function ruleLink(cap, id, label, currentOperation) {
   const op =
     currentOperation ?? orderedOperations(cap).find((o) => operationRuleIds(cap, o).includes(id));
-  return op
-    ? `<a href="${escape(endpointUrl(cap, op, id))}">${escape(label ?? id)}</a>`
+  if (op) return `<a href="${escape(endpointUrl(cap, op, id))}">${escape(label ?? id)}</a>`;
+  const entity = pluginEntities(cap).find((e) => e.rules.includes(id));
+  return entity
+    ? `<a href="${escape(entityUrl(cap, entity, id))}">${escape(label ?? id)}</a>`
     : escape(label ?? id);
 }
 
@@ -746,15 +790,33 @@ function checksSection(cap, checks = cap.checks, rules = cap.rules) {
     : 'No verification run recorded.';
   return `<section class="checks-section"><h2>Checks</h2><p class="section-note">${escape(summary)}${gaps.length ? ` ${gaps.length} ${gaps.length === 1 ? 'rule still needs' : 'rules still need'} a linked check.` : ''}</p>${attention.length ? disclosure('Needs attention · ' + attention.length, checksList(cap, attention), true) : ''}${passing.length ? disclosure('Passing checks · ' + passing.length, checksList(cap, passing)) : ''}${gaps.length ? disclosure('Rules without checks · ' + gaps.length, `<ul class="check-list">${gaps.map((r) => `<li>${ruleLink(cap, r.id, cap.presentation?.ruleTitles?.[r.id] ?? clean(r.text.split('\n')[0]))}</li>`).join('')}</ul>`) : ''}${disclosure('Scope of this evidence', '<p class="section-note">A passing run establishes what the linked tests observed. It does not cover every case or live model behaviour. Tracked source changes make the evidence stale.</p>' + (cap.gaps ?? []).map((g) => `<p class="section-note">${escape(g)}</p>`).join(''))}</section>`;
 }
+function entitySections(cap) {
+  const entities = pluginEntities(cap);
+  return [...new Set(entities.map((e) => e.kind))]
+    .map(
+      (kind) =>
+        `<section id="kind-${escape(kind)}"><h2>${escape(kindInfo(kind).plural)}</h2><ul class="entity-list">${entities
+          .filter((e) => e.kind === kind)
+          .map(
+            (e) =>
+              `<li data-entity="${escape(JSON.stringify([e.kind, e.id]))}"><a href="${escape(entityUrl(cap, e))}">${escape(e.title ?? e.id)}</a>${pluginMarkup(kind, 'summary', e, () => (e.summary ? `<span class="section-note">${escape(e.summary)}</span>` : ''))}</li>`,
+          )
+          .join('')}</ul></section>`,
+    )
+    .join('');
+}
 function overview(cap) {
-  return `<header><h1>${escape(cap.title ?? cap.id)}</h1>${attachmentBlock(target(cap, 'feature'), escape(cap.description ?? 'Describe what this page loads, shows and lets the user do.'), { className: 'description', label: cap.title ?? cap.id })}${cap.url ? `<p class="feature-url"><span>URL</span><code>${escape(cap.url)}</code></p>` : ''}</header><section id="api"><h2>API</h2>${orderedOperations(
-    cap,
-  )
-    .map((op) => {
-      const info = operationPresentation(cap, op);
-      return `<article class="endpoint" data-operation="${escape(op.operationId)}"><h3 class="endpoint-heading">${method(op)}<a href="${escape(endpointUrl(cap, op))}">${escape(op.path)}</a></h3>${attachmentBlock(target(cap, 'operation', op.operationId), escape(op.summary ?? op.operationId), { className: 'endpoint-summary', label: op.path })}${io(cap, op)}<p class="behaviour-preview"><b>Behaviour.</b> ${escape(info.behaviour ?? clean(rulesFor(cap, op)[0]?.text ?? 'No behaviour rules linked yet.'))}</p></article>`;
-    })
-    .join('')}</section>${markdownDiagrams(cap.prose, 'Play states')}${checksSection(cap)}`;
+  const operations = orderedOperations(cap);
+  return `<header><h1>${escape(cap.title ?? cap.id)}</h1>${attachmentBlock(target(cap, 'feature'), escape(cap.description ?? 'Describe what this page loads, shows and lets the user do.'), { className: 'description', label: cap.title ?? cap.id })}${cap.url ? `<p class="feature-url"><span>URL</span><code>${escape(cap.url)}</code></p>` : ''}</header>${
+    operations.length || cap.openapi?.paths
+      ? `<section id="api"><h2>API</h2>${operations
+          .map((op) => {
+            const info = operationPresentation(cap, op);
+            return `<article class="endpoint" data-operation="${escape(op.operationId)}"><h3 class="endpoint-heading">${method(op)}<a href="${escape(endpointUrl(cap, op))}">${escape(op.path)}</a></h3>${attachmentBlock(target(cap, 'operation', op.operationId), escape(op.summary ?? op.operationId), { className: 'endpoint-summary', label: op.path })}${io(cap, op)}<p class="behaviour-preview"><b>Behaviour.</b> ${escape(info.behaviour ?? clean(rulesFor(cap, op)[0]?.text ?? 'No behaviour rules linked yet.'))}</p></article>`;
+          })
+          .join('')}</section>`
+      : ''
+  }${entitySections(cap)}${markdownDiagrams(cap.prose, 'Play states')}${checksSection(cap)}`;
 }
 function errorSection(cap, op) {
   const errors = Object.entries(op.responses ?? {}).filter(([status]) => !/^2/.test(status));
@@ -800,7 +862,7 @@ function checkPage(cap, check) {
 }
 function entityPage(cap, entity) {
   const source = entity.source,
-    op = cap.operations.find((o) => o.operationId === source.operationId);
+    op = (cap.operations ?? []).find((o) => o.operationId === source.operationId);
   const context = entity.derived
     ? source.kind === 'parameters'
       ? `${pascal(source.location)} parameters for ${op.method} ${op.path}.`
@@ -840,6 +902,65 @@ function entityPage(cap, entity) {
       : ''
   }<p class="type-source section-note">${entity.derived ? 'Name derived for this view from its existing structure.' : 'Defined in ' + escape(cap.files.interface) + ' · ' + escape(entity.id)}</p>`;
 }
+function pluginEntityPage(cap, entity) {
+  const info = kindInfo(entity.kind),
+    all = project.capabilities.flatMap((c) => pluginEntities(c).map((e) => ({ cap: c, e })));
+  const rules = cap.rules.filter((r) => entity.rules.includes(r.id));
+  const examples = cap.examples.filter((e) => e.rules?.some((id) => entity.rules.includes(id)));
+  const checks = cap.checks.filter(
+    (c) =>
+      c.rules?.some((id) => entity.rules.includes(id)) ||
+      c.examples?.some((id) => examples.some((e) => e.id === id)),
+  );
+  const entityLabel = (feature, e) =>
+    `<a href="${escape(entityUrl(feature, e))}">${escape(e.title ?? e.id)}</a><span class="section-note">${escape(kindInfo(e.kind).label)}${feature.id !== cap.id ? ' · ' + escape(feature.title ?? feature.id) : ''}</span>`;
+  const links = entity.links.map((link) => {
+    const feature = project.capabilities.find((c) => c.id === (link.capability ?? cap.id));
+    const found =
+      feature &&
+      (link.kind === 'operation'
+        ? (feature.operations ?? []).find((o) => o.operationId === link.id)
+        : pluginEntities(feature).find((e) => e.kind === link.kind && e.id === link.id));
+    const label = !found
+      ? `${escape(link.kind)}:${escape(link.id)}`
+      : link.kind === 'operation'
+        ? `${method(found)}<a href="${escape(endpointUrl(feature, found))}">${escape(found.path)}</a>`
+        : entityLabel(feature, found);
+    return `<li>${label}${link.relation ? `<span class="section-note">${escape(link.relation)}</span>` : ''}</li>`;
+  });
+  const usedBy = [
+    ...project.capabilities.flatMap((feature) =>
+      (feature.operations ?? [])
+        .filter((op) =>
+          (op['x-mhproto-links'] ?? []).some((value) => {
+            const [kind, id] = String(value)
+              .replace(/^[a-z][a-z0-9-]*\//, '')
+              .split(/:(.*)/);
+            return (
+              kind === entity.kind &&
+              id === entity.id &&
+              (String(value).includes('/')
+                ? String(value).startsWith(cap.id + '/')
+                : feature.id === cap.id)
+            );
+          }),
+        )
+        .map(
+          (op) =>
+            `<li>${method(op)}<a href="${escape(endpointUrl(feature, op))}">${escape(op.path)}</a></li>`,
+        ),
+    ),
+    ...all
+      .filter(({ cap: feature, e }) =>
+        e.links.some(
+          (l) =>
+            (l.capability ?? feature.id) === cap.id && l.kind === entity.kind && l.id === entity.id,
+        ),
+      )
+      .map(({ cap: feature, e }) => `<li>${entityLabel(feature, e)}</li>`),
+  ];
+  return `<a class="back" href="${escape(featureUrl(cap))}">← ${escape(cap.title ?? cap.id)}</a><header><h1>${escape(entity.title ?? entity.id)}</h1><p class="section-note">${escape(info.label)} · ${escape(entity.id)}</p>${entity.summary ? `<p class="description">${escape(entity.summary)}</p>` : ''}</header><div class="page-actions"><button class="text-button" data-copy-url>Copy page link</button></div>${pluginMarkup(entity.kind, 'section', entity, () => (entity.data === undefined ? '' : disclosure('Definition', raw(entity.data), true)))}${visualGallery(target(cap, entity.kind, entity.id))}<section><h2>Behaviour</h2>${rules.length ? `<ul class="rule-list">${rules.map((r) => `<li id="${escape(r.id)}">${attachmentBlock(target(cap, 'rule', r.id), prose(r.text), { tag: 'div', className: 'rule-text', label: r.id })}<a class="rule-id" href="${escape(entityUrl(cap, entity, r.id))}">${escape(r.id)}</a></li>`).join('')}</ul>` : '<p class="section-note">No behaviour rules linked yet.</p>'}</section>${links.length ? `<section><h2>Depends on</h2><ul class="type-parent-list">${links.join('')}</ul></section>` : ''}${usedBy.length ? `<section><h2>Used by</h2><ul class="type-parent-list">${usedBy.join('')}</ul></section>` : ''}${examples.length ? `<section><h2>Examples</h2>${examples.map((e) => scenario(cap, e)).join('')}</section>` : ''}${checksSection(cap, checks, rules)}<p class="type-source section-note">Defined in ${escape(entity.file)}</p>`;
+}
 function sourcesPage(cap) {
   return `<a class="back" href="${escape(featureUrl(cap))}">← ${escape(cap.title ?? cap.id)}</a><h1>Sources</h1><p class="description">The feature reads these existing contract files. Edit them in your editor or through your agent.</p><table class="table"><tbody>${Object.entries(
     cap.files,
@@ -862,7 +983,7 @@ const kindLabel = (kind) =>
     check: 'Check',
     visual: 'Visual',
     system: 'System',
-  })[kind] ?? kind;
+  })[kind] ?? kindInfo(kind).label;
 function changeTitle(c) {
   const value = c.after ?? c.before;
   return c.kind === 'operation'
@@ -880,7 +1001,7 @@ function currentChangeUrl(c) {
   const cap = project.capabilities.find((x) => x.id === c.capability);
   if (!cap) return featureUrl(project.capabilities[0]) + '/sources';
   if (c.kind === 'operation') {
-    const op = cap.operations.find((o) => o.operationId === c.id);
+    const op = (cap.operations ?? []).find((o) => o.operationId === c.id);
     return op && endpointUrl(cap, op);
   }
   if (c.kind === 'schema') {
@@ -888,6 +1009,8 @@ function currentChangeUrl(c) {
     return entity && typeUrl(cap, entity);
   }
   if (c.kind === 'check') return checkUrl(cap, { id: c.id });
+  const entity = pluginEntities(cap).find((e) => e.kind === c.kind && e.id === c.id);
+  if (entity) return entityUrl(cap, entity);
   if (c.kind === 'rule' || c.kind === 'example') {
     const ids = c.kind === 'example' ? c.after.operations : undefined,
       op = orderedOperations(cap).find((o) =>
@@ -900,7 +1023,7 @@ function currentChangeUrl(c) {
   if (c.kind === 'visual') {
     const t = c.after.target;
     if (['operation', 'request', 'response', 'field'].includes(t.kind)) {
-      const op = cap.operations.find((o) => o.operationId === t.id);
+      const op = (cap.operations ?? []).find((o) => o.operationId === t.id);
       if (op) return endpointUrl(cap, op);
     }
     if (t.kind === 'schema') {
@@ -908,6 +1031,8 @@ function currentChangeUrl(c) {
       if (entity) return typeUrl(cap, entity);
     }
     if (t.kind === 'check') return checkUrl(cap, { id: t.id });
+    const targetEntity = pluginEntities(cap).find((e) => e.kind === t.kind && e.id === t.id);
+    if (targetEntity) return entityUrl(cap, targetEntity);
   }
   return featureUrl(cap);
 }
@@ -966,7 +1091,7 @@ function changesPage(id) {
         .join('')}</ul></section>`;
     })
     .join('');
-  return `<h1>Changes</h1><p class="description">${baseline ? escape(baselineLabel()) + ' → Current spec' : 'Save the current spec before editing, or choose an earlier snapshot to compare.'}</p>${baseline?.createdAt ? `<p class="section-note">Baseline saved ${escape(new Date(baseline.createdAt).toLocaleString())}</p>` : ''}${baseline ? `<p class="change-counts">${counts}</p><div class="page-actions"><button class="text-button" data-copy-url>Copy page link</button><button class="text-button" data-download-snapshot>Download current snapshot</button></div>` : ''}${comparisonSetup()}${baseline && comparisonChanges.length ? `<label class="changes-filter">Show <select id="changes-filter">${['all', 'operation', 'schema', 'rule', 'feature', 'example', 'check', 'visual', 'system'].map((k) => `<option value="${k}"${comparisonFilter === k ? ' selected' : ''}>${k === 'all' ? 'All changes' : escape(kindLabel(k))}</option>`).join('')}</select></label>${groups || '<p class="empty">No changes in this category.</p>'}` : baseline ? '<p class="empty">No spec changes since this baseline.</p>' : ''}`;
+  return `<h1>Changes</h1><p class="description">${baseline ? escape(baselineLabel()) + ' → Current spec' : 'Save the current spec before editing, or choose an earlier snapshot to compare.'}</p>${baseline?.createdAt ? `<p class="section-note">Baseline saved ${escape(new Date(baseline.createdAt).toLocaleString())}</p>` : ''}${baseline ? `<p class="change-counts">${counts}</p><div class="page-actions"><button class="text-button" data-copy-url>Copy page link</button><button class="text-button" data-download-snapshot>Download current snapshot</button></div>` : ''}${comparisonSetup()}${baseline && comparisonChanges.length ? `<label class="changes-filter">Show <select id="changes-filter">${['all', 'operation', 'schema', ...new Set([...project.capabilities, ...(baselineProject?.capabilities ?? [])].flatMap((c) => pluginEntities(c).map((e) => e.kind))), 'rule', 'feature', 'example', 'check', 'visual', 'system'].map((k) => `<option value="${k}"${comparisonFilter === k ? ' selected' : ''}>${k === 'all' ? 'All changes' : escape(kindLabel(k))}</option>`).join('')}</select></label>${groups || '<p class="empty">No changes in this category.</p>'}` : baseline ? '<p class="empty">No spec changes since this baseline.</p>' : ''}`;
 }
 function comparisonBar() {
   return comparisonEnabled && baseline
@@ -983,9 +1108,11 @@ function decorateComparison(state) {
           ? changeFor(cap, 'schema', state.id)
           : state.kind === 'checks'
             ? changeFor(cap, 'check', state.id)
-            : !state.kind
-              ? changeFor(cap, 'feature', cap.id)
-              : null;
+            : state.kind === 'entities'
+              ? changeFor(cap, state.entityKind, state.id)
+              : !state.kind
+                ? changeFor(cap, 'feature', cap.id)
+                : null;
   if (pageChange) $('#content h1')?.insertAdjacentHTML('beforeend', changeBadge(pageChange));
   for (const article of document.querySelectorAll('.endpoint[data-operation]'))
     article
@@ -994,6 +1121,10 @@ function decorateComparison(state) {
         'beforeend',
         changeBadge(changeFor(cap, 'operation', article.dataset.operation)),
       );
+  for (const item of document.querySelectorAll('.entity-list>li[data-entity]')) {
+    const [kind, id] = JSON.parse(item.dataset.entity);
+    item.querySelector('a')?.insertAdjacentHTML('afterend', changeBadge(changeFor(cap, kind, id)));
+  }
   for (const rule of cap.rules)
     document
       .getElementById(rule.id)
@@ -1046,6 +1177,13 @@ function searchResults() {
             note: op.method + ' ' + op.path + ' · example',
           });
       }
+    for (const entity of pluginEntities(cap))
+      if (matches([entity.id, entity.title, entity.summary, entity.data]))
+        found.push({
+          url: entityUrl(cap, entity),
+          title: entity.title ?? entity.id,
+          note: kindInfo(entity.kind).label + ' · ' + (cap.title ?? cap.id),
+        });
     for (const entity of entityIndex.caps.get(cap.id).values())
       if (matches([entity.name, entity.schema?.description]))
         found.push({
@@ -1082,7 +1220,7 @@ function render() {
   if (query) body = searchResults();
   else if (state.kind === 'changes') body = changesPage(state.id);
   else if (state.kind === 'api') {
-    const op = cap.operations.find((o) => o.operationId === state.id);
+    const op = (cap.operations ?? []).find((o) => o.operationId === state.id);
     body = op
       ? endpointPage(cap, op)
       : `<a class="back" href="${escape(featureUrl(cap))}">← ${escape(cap.title)}</a><h1>Endpoint not found</h1>`;
@@ -1094,6 +1232,13 @@ function render() {
     body = entity
       ? entityPage(cap, entity)
       : `<a class="back" href="${escape(featureUrl(cap))}">← ${escape(cap.title ?? cap.id)}</a><h1>Type not found</h1>`;
+  } else if (state.kind === 'entities') {
+    const entity = pluginEntities(cap).find(
+      (e) => e.kind === state.entityKind && e.id === state.id,
+    );
+    body = entity
+      ? pluginEntityPage(cap, entity)
+      : `<a class="back" href="${escape(featureUrl(cap))}">← ${escape(cap.title ?? cap.id)}</a><h1>${escape(kindInfo(state.entityKind).label)} not found</h1>`;
   } else if (state.kind === 'sources') body = sourcesPage(cap);
   else body = overview(cap);
   $('#content').innerHTML = (state.kind === 'changes' ? '' : comparisonBar()) + body;
@@ -1128,10 +1273,13 @@ function render() {
     (state.kind === 'changes'
       ? 'Changes'
       : state.kind === 'api'
-        ? cap.operations.find((o) => o.operationId === state.id)?.path
+        ? (cap.operations ?? []).find((o) => o.operationId === state.id)?.path
         : state.kind === 'types'
           ? (entityIndex.caps.get(cap.id).get(state.id)?.name ?? 'Type not found')
-          : (cap.title ?? cap.id)) + ' · MHProto';
+          : state.kind === 'entities'
+            ? (pluginEntities(cap).find((e) => e.kind === state.entityKind && e.id === state.id)
+                ?.title ?? state.id)
+            : (cap.title ?? cap.id)) + ' · MHProto';
   if (state.rule && !query) {
     const target = document.getElementById(state.rule);
     for (let parent = target?.parentElement; parent; parent = parent.parentElement)
@@ -1422,6 +1570,20 @@ $('#save-preview').addEventListener('click', () => {
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
+const loadedScripts = new Set();
+async function loadPluginScripts(model) {
+  // Exported previews inline these scripts ahead of the viewer.
+  for (const plugin of model.plugins ?? []) {
+    if (!plugin.viewer || loadedScripts.has(plugin.viewer)) continue;
+    loadedScripts.add(plugin.viewer);
+    await new Promise((resolve) => {
+      const script = document.createElement('script');
+      script.src = plugin.viewer;
+      script.onload = script.onerror = resolve;
+      document.head.append(script);
+    });
+  }
+}
 async function refresh(initial = false) {
   try {
     if (embedded) {
@@ -1447,6 +1609,7 @@ async function refresh(initial = false) {
       } else throw new Error('Could not read the comparison baseline');
     }
     if (nextBaseline) snapshotProject(nextBaseline);
+    await loadPluginScripts(next);
     const nextSignature = JSON.stringify([next, nextBaseline]);
     if (initial || nextSignature !== signature) {
       project = next;

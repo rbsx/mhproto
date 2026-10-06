@@ -177,6 +177,15 @@ export async function serve(root, port = 4317, options = {}) {
   return server;
 }
 
+// Inline the shared model module into the viewer for standalone pages.
+export function bundleViewer(app, diff) {
+  const bundled = app.replace(/import\s*\{[^}]+\}\s*from\s*['"]\.\/diff\.js['"];?/, () =>
+    diff.replace(/^export /gm, ''),
+  );
+  if (bundled === app) throw new Error('Viewer module could not be bundled');
+  return bundled;
+}
+
 export async function exportViewer(root, destination, { against } = {}) {
   const actualRoot = await realpath(root);
   const actualDestination = await realpath(destination).catch((error) => {
@@ -252,9 +261,7 @@ export async function exportViewer(root, destination, { against } = {}) {
       readFile(path.join(packageRoot, 'viewer', name), 'utf8'),
     ),
   );
-  const bundled = js.replace(/import\s*\{[^}]+\}\s*from\s*['"]\.\/diff\.js['"];?/, () =>
-    diff.replace(/^export /gm, ''),
-  );
+  const bundled = bundleViewer(js, diff);
   const safeJson = (value) => JSON.stringify(value).replaceAll('<', '\\u003c');
   const standalone = html
     .replace(/<link\s+rel="stylesheet"\s+href="\/style\.css"\s*\/?>/, () => `<style>${css}</style>`)
