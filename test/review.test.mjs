@@ -5,7 +5,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
 import { parse, stringify } from 'yaml';
-import { temporaryDirectory } from './helpers.mjs';
+import { temporaryDirectory, editOpenapi } from './helpers.mjs';
 import {
   loadProject,
   validateProject,
@@ -16,7 +16,7 @@ import {
 import { contextPacket } from '../src/context.mjs';
 import { runCheck, verifyCapability } from '../src/verify.mjs';
 import { exportViewer } from '../src/server.mjs';
-import { compareModels } from '../viewer/diff.js';
+import { compareModels, openapiView } from '../viewer/diff.js';
 
 const cli = path.join(packageRoot, 'bin/mhproto.mjs');
 async function fixture() {
@@ -142,7 +142,7 @@ test('local OpenAPI object references, parameter overrides and escaped type name
     };
   });
   const project = await loadProject(root),
-    op = project.capabilities[0].operations[0];
+    op = openapiView(project.capabilities[0]).operations[0];
   assert.equal(op.parameters.length, 1);
   assert.equal(op.parameters[0].schema.type, 'integer');
   const packet = contextPacket(project, { operation: 'getStatus' });
@@ -306,7 +306,9 @@ test('comparison keeps payload array order and observes path-level metadata', as
     operation: 'getStatus',
     body: { rules: ['second', 'first'] },
   };
-  after.capabilities[0].openapi.paths['/status'].description = 'New path-level behaviour';
+  editOpenapi(after.capabilities[0], ({ openapi }) => {
+    openapi.paths['/status'].description = 'New path-level behaviour';
+  });
   const changes = compareModels(project, after);
   assert.ok(changes.some((c) => c.kind === 'example'));
   assert.ok(

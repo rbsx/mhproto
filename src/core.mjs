@@ -184,28 +184,16 @@ async function loadCapability(root, definition, system, registry) {
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
   }
-  const openapi = interfaces.find((i) => i.adapter === 'openapi');
   return {
     ...definition,
     prose,
     rules: extractRules(prose),
-    // The OpenAPI view the viewer renders; its entities are derived from it (entitiesOf).
-    ...(openapi
-      ? {
-          openapi: openapi.document,
-          operations: openapi.entities.filter((e) => e.kind === 'operation').map((e) => e.data),
-          transitions: openapi.document['x-phase-transitions'] ?? [],
-          nonTransitions: openapi.document['x-phase-unchanged-by'] ?? [],
-        }
-      : {}),
     interfaces: interfaces.map(({ adapter, file, document, meta }) => {
       const item = { adapter, file, ...(meta !== undefined ? { meta } : {}) };
       // Adapter hooks read documents in memory; models and snapshots do not repeat them.
-      if (adapter !== 'openapi')
-        Object.defineProperty(item, 'document', { value: document, enumerable: false });
-      return item;
+      return Object.defineProperty(item, 'document', { value: document, enumerable: false });
     }),
-    entities: interfaces.filter((i) => i.adapter !== 'openapi').flatMap((i) => i.entities),
+    entities: interfaces.flatMap((i) => i.entities),
     files: {
       spec: definition.spec,
       ...Object.fromEntries(

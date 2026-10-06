@@ -4,6 +4,7 @@ import {
   snapshotProject,
   canonical,
   entitiesOf,
+  openapiView,
   operationRuleIds,
 } from './diff.js';
 const $ = (selector) => document.querySelector(selector);
@@ -35,6 +36,8 @@ const endpointUrl = (cap, op, rule) =>
   encodeURIComponent(op.operationId) +
   (rule ? '?rule=' + encodeURIComponent(rule) : '');
 const checkUrl = (cap, check) => featureUrl(cap) + '/checks/' + encodeURIComponent(check.id);
+// The OpenAPI document and operations of a capability, rebuilt from its entities.
+const api = (cap) => openapiView(cap) ?? { operations: [] };
 const typeUrl = (cap, entity) => featureUrl(cap) + '/types/' + encodeURIComponent(entity.id);
 // Entities from interface plugins other than OpenAPI, which keeps its own pages.
 const pluginEntities = (cap) => (cap ? entitiesOf(cap).filter((e) => e.adapter !== 'openapi') : []);
@@ -250,7 +253,7 @@ function buildEntityIndex(model) {
   for (const cap of model.capabilities) {
     index.caps.set(cap.id, new Map());
     index.nodes.set(cap.id, new WeakMap());
-    for (const [name, schema] of Object.entries(cap.openapi?.components?.schemas ?? {}))
+    for (const [name, schema] of Object.entries(api(cap).openapi?.components?.schemas ?? {}))
       register(cap, name, name, schema, { kind: 'schema', file: cap.files?.interface });
   }
   for (const cap of model.capabilities) {
@@ -369,7 +372,7 @@ function referencedSchemas(cap, schemas) {
       const name = ref.replaceAll('~1', '/').replaceAll('~0', '~');
       if (!names.has(name)) {
         names.add(name);
-        visit(cap.openapi?.components?.schemas?.[name]);
+        visit(api(cap).openapi?.components?.schemas?.[name]);
       }
     }
     for (const [key, value] of Object.entries(node)) if (key !== '$ref') visit(value);
@@ -379,7 +382,7 @@ function referencedSchemas(cap, schemas) {
 }
 function visualsForSurface(t) {
   const cap = project.capabilities.find((c) => c.id === t.capability),
-    op = (cap.operations ?? []).find((o) => o.operationId === t.id);
+    op = api(cap).operations.find((o) => o.operationId === t.id);
   const schemas =
     t.kind === 'request'
       ? [op?.requestBody, ...(op?.parameters ?? [])]
@@ -486,7 +489,7 @@ function route() {
 }
 function orderedOperations(cap) {
   const order = cap.presentation?.operationOrder ?? [];
-  return [...(cap.operations ?? [])].sort(
+  return [...api(cap).operations].sort(
     (a, b) =>
       (order.includes(a.operationId) ? order.indexOf(a.operationId) : 999) -
       (order.includes(b.operationId) ? order.indexOf(b.operationId) : 999),
@@ -510,7 +513,7 @@ function ruleLink(cap, id, label, currentOperation) {
 function resolveSchema(cap, schema, seen = new Set()) {
   if (!schema?.$ref) return schema ?? {};
   if (seen.has(schema.$ref)) return { type: 'object', description: 'Recursive object' };
-  let node = cap.openapi;
+  let node = api(cap).openapi;
   for (const part of schema.$ref.slice(2).split('/'))
     node = node?.[part.replaceAll('~1', '/').replaceAll('~0', '~')];
   const next = new Set(seen).add(schema.$ref);
@@ -808,7 +811,7 @@ function entitySections(cap) {
 function overview(cap) {
   const operations = orderedOperations(cap);
   return `<header><h1>${escape(cap.title ?? cap.id)}</h1>${attachmentBlock(target(cap, 'feature'), escape(cap.description ?? 'Describe what this page loads, shows and lets the user do.'), { className: 'description', label: cap.title ?? cap.id })}${cap.url ? `<p class="feature-url"><span>URL</span><code>${escape(cap.url)}</code></p>` : ''}</header>${
-    operations.length || cap.openapi?.paths
+    operations.length || api(cap).openapi
       ? `<section id="api"><h2>API</h2>${operations
           .map((op) => {
             const info = operationPresentation(cap, op);
@@ -862,7 +865,7 @@ function checkPage(cap, check) {
 }
 function entityPage(cap, entity) {
   const source = entity.source,
-    op = (cap.operations ?? []).find((o) => o.operationId === source.operationId);
+    op = api(cap).operations.find((o) => o.operationId === source.operationId);
   const context = entity.derived
     ? source.kind === 'parameters'
       ? `${pascal(source.location)} parameters for ${op.method} ${op.path}.`
@@ -979,7 +982,7 @@ function currentChangeUrl(c) {
   const cap = project.capabilities.find((x) => x.id === c.capability);
   if (!cap) return featureUrl(project.capabilities[0]) + '/sources';
   if (c.kind === 'operation') {
-    const op = (cap.operations ?? []).find((o) => o.operationId === c.id);
+    const op = api(cap).operations.find((o) => o.operationId === c.id);
     return op && endpointUrl(cap, op);
   }
   if (c.kind === 'schema') {
@@ -1001,7 +1004,7 @@ function currentChangeUrl(c) {
   if (c.kind === 'visual') {
     const t = c.after.target;
     if (['operation', 'request', 'response', 'field'].includes(t.kind)) {
-      const op = (cap.operations ?? []).find((o) => o.operationId === t.id);
+      const op = api(cap).operations.find((o) => o.operationId === t.id);
       if (op) return endpointUrl(cap, op);
     }
     if (t.kind === 'schema') {
@@ -1198,7 +1201,7 @@ function render() {
   if (query) body = searchResults();
   else if (state.kind === 'changes') body = changesPage(state.id);
   else if (state.kind === 'api') {
-    const op = (cap.operations ?? []).find((o) => o.operationId === state.id);
+    const op = api(cap).operations.find((o) => o.operationId === state.id);
     body = op
       ? endpointPage(cap, op)
       : `<a class="back" href="${escape(featureUrl(cap))}">← ${escape(cap.title)}</a><h1>Endpoint not found</h1>`;
@@ -1251,7 +1254,7 @@ function render() {
     (state.kind === 'changes'
       ? 'Changes'
       : state.kind === 'api'
-        ? (cap.operations ?? []).find((o) => o.operationId === state.id)?.path
+        ? api(cap).operations.find((o) => o.operationId === state.id)?.path
         : state.kind === 'types'
           ? (entityIndex.caps.get(cap.id).get(state.id)?.name ?? 'Type not found')
           : state.kind === 'entities'

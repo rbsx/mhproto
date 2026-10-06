@@ -1,4 +1,4 @@
-import { temporaryDirectory as mkdtemp } from './helpers.mjs';
+import { temporaryDirectory as mkdtemp, editOpenapi } from './helpers.mjs';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFile, writeFile, symlink } from 'node:fs/promises';
@@ -160,31 +160,33 @@ test('write endpoint requires same-origin JSON and persists a validated attachme
 test('scoped context preserves exact behaviour, constraints and failures while deferring images, logs and nested types', async () => {
   const { project } = await fixture(),
     cap = project.capabilities[0],
-    op = cap.operations[0];
+    op = { operationId: 'getStatus' };
   cap.rules.push({ id: 'EXAMPLE-B-2', text: 'Never reveal a private owner.' });
   cap.presentation = {
     operations: { getStatus: { ruleGroups: [{ title: 'Privacy', rules: ['EXAMPLE-B-2'] }] } },
   };
-  op['x-preconditions'] = [
-    {
-      needs: 'Service exists',
-      check: 'lookup()',
-      fails: { status: 404, code: 'not_found', clause: 'EXAMPLE-B-1' },
-    },
-  ];
-  op.responses['404'] = {
-    description: 'Not found',
-    'x-error-codes': [{ code: 'not_found', when: 'Service missing', clause: 'EXAMPLE-B-1' }],
-  };
-  op.responses['200'].content['application/json'].schema = {
-    type: 'object',
-    properties: { owner: { $ref: '#/components/schemas/Owner' } },
-  };
-  cap.openapi.components = {
-    schemas: {
-      Owner: { type: 'object', properties: { name: { type: 'string', maxLength: 100 } } },
-    },
-  };
+  editOpenapi(cap, ({ openapi, operations: [op] }) => {
+    op['x-preconditions'] = [
+      {
+        needs: 'Service exists',
+        check: 'lookup()',
+        fails: { status: 404, code: 'not_found', clause: 'EXAMPLE-B-1' },
+      },
+    ];
+    op.responses['404'] = {
+      description: 'Not found',
+      'x-error-codes': [{ code: 'not_found', when: 'Service missing', clause: 'EXAMPLE-B-1' }],
+    };
+    op.responses['200'].content['application/json'].schema = {
+      type: 'object',
+      properties: { owner: { $ref: '#/components/schemas/Owner' } },
+    };
+    openapi.components = {
+      schemas: {
+        Owner: { type: 'object', properties: { name: { type: 'string', maxLength: 100 } } },
+      },
+    };
+  });
   cap.checks = [{ id: 'EXAMPLE-V-1', rules: ['EXAMPLE-B-1'], command: ['node', 'test'] }];
   cap.evidence = {
     stale: true,

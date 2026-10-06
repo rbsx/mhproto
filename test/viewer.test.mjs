@@ -1,4 +1,4 @@
-import { temporaryDirectory as mkdtemp } from './helpers.mjs';
+import { temporaryDirectory as mkdtemp, editOpenapi } from './helpers.mjs';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFile } from 'node:fs/promises';
@@ -36,62 +36,64 @@ async function fixture({
   cap.url = '/status';
   cap.description = 'Loads and displays the service status. Users may update it if authorised.';
   cap.rules.push({ id: 'EXAMPLE-B-2', text: 'Only authorised users can update a service.' });
-  cap.openapi.components = {
-    schemas: {
-      Status: {
-        type: 'object',
-        required: ['status', 'owner'],
-        properties: {
-          status: { type: 'string', enum: ['ready', 'busy'] },
-          owner: { anyOf: [{ $ref: '#/components/schemas/User' }, { type: 'null' }] },
+  editOpenapi(cap, ({ openapi, operations }) => {
+    openapi.components = {
+      schemas: {
+        Status: {
+          type: 'object',
+          required: ['status', 'owner'],
+          properties: {
+            status: { type: 'string', enum: ['ready', 'busy'] },
+            owner: { anyOf: [{ $ref: '#/components/schemas/User' }, { type: 'null' }] },
+          },
+        },
+        User: {
+          type: 'object',
+          required: ['id'],
+          properties: { id: { type: 'string', format: 'uuid' }, name: { type: 'string' } },
         },
       },
-      User: {
-        type: 'object',
-        required: ['id'],
-        properties: { id: { type: 'string', format: 'uuid' }, name: { type: 'string' } },
-      },
-    },
-  };
-  cap.operations[0].responses['200'].content['application/json'].schema = {
-    $ref: '#/components/schemas/Status',
-  };
-  cap.operations.push({
-    operationId: 'setStatus',
-    method: 'POST',
-    path: '/status/{id}',
-    summary: 'Update service status',
-    rules: ['EXAMPLE-B-2'],
-    parameters: [
-      { in: 'path', name: 'id', required: true, schema: { type: 'string', format: 'uuid' } },
-    ],
-    requestBody: {
-      required: true,
-      content: {
-        'application/json': {
-          schema: {
-            type: 'object',
-            required: ['status', 'load'],
-            properties: {
-              status: { type: 'string', enum: ['ready', 'busy'] },
-              load: { type: 'number', minimum: 0, maximum: 1 },
+    };
+    operations[0].responses['200'].content['application/json'].schema = {
+      $ref: '#/components/schemas/Status',
+    };
+    operations.push({
+      operationId: 'setStatus',
+      method: 'POST',
+      path: '/status/{id}',
+      summary: 'Update service status',
+      rules: ['EXAMPLE-B-2'],
+      parameters: [
+        { in: 'path', name: 'id', required: true, schema: { type: 'string', format: 'uuid' } },
+      ],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['status', 'load'],
+              properties: {
+                status: { type: 'string', enum: ['ready', 'busy'] },
+                load: { type: 'number', minimum: 0, maximum: 1 },
+              },
             },
           },
         },
       },
-    },
-    responses: {
-      201: {
-        description: 'Updated',
-        content: { 'application/json': { schema: { $ref: '#/components/schemas/Status' } } },
+      responses: {
+        201: {
+          description: 'Updated',
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/Status' } } },
+        },
+        403: {
+          description: 'Permission denied',
+          'x-error-codes': [
+            { code: 'forbidden', when: 'User cannot update this service', clause: 'EXAMPLE-B-2' },
+          ],
+        },
       },
-      403: {
-        description: 'Permission denied',
-        'x-error-codes': [
-          { code: 'forbidden', when: 'User cannot update this service', clause: 'EXAMPLE-B-2' },
-        ],
-      },
-    },
+    });
   });
   cap.presentation = {
     operations: {
@@ -216,9 +218,10 @@ test('feature overview starts with API signatures and ends with checks, without 
 test('Changes lists semantic edits, opens a stable before/now page and links to the affected type', async () => {
   const options = {
     baseline: true,
-    change: (p) => {
-      p.capabilities[0].openapi.components.schemas.User.properties.avatar = { type: 'string' };
-    },
+    change: (p) =>
+      editOpenapi(p.capabilities[0], ({ openapi }) => {
+        openapi.components.schemas.User.properties.avatar = { type: 'string' };
+      }),
   };
   const { dom, doc, window, click } = await fixture(options);
   assert.equal(doc.querySelectorAll('[data-change]').length, 0, 'Reading mode stays uncluttered');
@@ -246,15 +249,14 @@ test('comparison highlights added, changed and removed fields without adding obj
   const { dom, doc, window, click } = await fixture({
     baseline: true,
     hash: '#/features/example/api/setStatus?compare=1&rule=EXAMPLE-B-2',
-    change: (p) => {
-      const user = p.capabilities[0].openapi.components.schemas.User;
-      user.required = [];
-      delete user.properties.name;
-      user.properties.avatar = { type: 'string' };
-      p.capabilities[0].operations[1].requestBody.content[
-        'application/json'
-      ].schema.properties.load.minimum = 0.2;
-    },
+    change: (p) =>
+      editOpenapi(p.capabilities[0], ({ openapi, operations }) => {
+        const user = openapi.components.schemas.User;
+        user.required = [];
+        delete user.properties.name;
+        user.properties.avatar = { type: 'string' };
+        operations[1].requestBody.content['application/json'].schema.properties.load.minimum = 0.2;
+      }),
   });
   assert.ok(doc.querySelector('.io-grid [data-change=added]').textContent.includes('avatar'));
   assert.ok(doc.querySelector('.io-grid [data-change=removed]').textContent.includes('name'));
@@ -279,10 +281,11 @@ test('removed endpoints remain reviewable, and category filtering does not hide 
   const { dom, doc, window, click } = await fixture({
     baseline: true,
     hash: '#/changes',
-    change: (p) => {
-      p.capabilities[0].operations.pop();
-      p.capabilities[0].openapi.components.schemas.User.properties.avatar = { type: 'string' };
-    },
+    change: (p) =>
+      editOpenapi(p.capabilities[0], ({ openapi, operations }) => {
+        operations.pop();
+        openapi.components.schemas.User.properties.avatar = { type: 'string' };
+      }),
   });
   const select = doc.querySelector('#changes-filter');
   select.value = 'operation';
@@ -301,7 +304,9 @@ test('baseline picker reads earlier HTML without executing it and preserves the 
   const old = JSON.parse(
     JSON.stringify(JSON.parse(doc.querySelector('#mhproto-model').textContent)),
   );
-  old.capabilities[0].openapi.components.schemas.User.properties.previous = { type: 'string' };
+  editOpenapi(old.capabilities[0], ({ openapi }) => {
+    openapi.components.schemas.User.properties.previous = { type: 'string' };
+  });
   const choose = async (content, name) => {
     const input = doc.querySelector('#baseline-file');
     Object.defineProperty(input, 'files', {
@@ -434,17 +439,17 @@ test('named types link from inline signatures to a shareable definition and ever
 });
 
 test('unnamed query and body structures receive linked labels without conflating them with declared types', async () => {
-  const change = (p) => {
-    const cap = p.capabilities[0];
-    cap.operations[0].parameters = [
-      { in: 'query', name: 'date', required: true, schema: { type: 'string' } },
-      { in: 'query', name: 'deviceId', required: false, schema: { type: 'string' } },
-    ];
-    cap.openapi.components.schemas.GetStatusQuery = {
-      type: 'object',
-      properties: { unrelated: { type: 'boolean' } },
-    };
-  };
+  const change = (p) =>
+    editOpenapi(p.capabilities[0], ({ openapi, operations }) => {
+      operations[0].parameters = [
+        { in: 'query', name: 'date', required: true, schema: { type: 'string' } },
+        { in: 'query', name: 'deviceId', required: false, schema: { type: 'string' } },
+      ];
+      openapi.components.schemas.GetStatusQuery = {
+        type: 'object',
+        properties: { unrelated: { type: 'boolean' } },
+      };
+    });
   const { dom, doc, window, click } = await fixture({ change });
   const query = doc.querySelector('.endpoint[data-operation="getStatus"] .io-grid a.type-link');
   assert.equal(query.textContent, 'GetStatusQueryInline');
@@ -465,21 +470,21 @@ test('unnamed query and body structures receive linked labels without conflating
 test('array item entities and enum types have definitions and nested usage backlinks', async () => {
   const { dom, doc, click } = await fixture({
     hash: '#/features/example/api/setStatus',
-    change: (p) => {
-      const cap = p.capabilities[0];
-      cap.openapi.components.schemas.Phase = { type: 'string', enum: ['ready', 'busy'] };
-      cap.openapi.components.schemas.Status.properties.phase = {
-        $ref: '#/components/schemas/Phase',
-      };
-      cap.openapi.components.schemas.Status.properties.history = {
-        type: 'array',
-        items: {
-          type: 'object',
-          required: ['at'],
-          properties: { at: { type: 'string', format: 'date-time' } },
-        },
-      };
-    },
+    change: (p) =>
+      editOpenapi(p.capabilities[0], ({ openapi }) => {
+        openapi.components.schemas.Phase = { type: 'string', enum: ['ready', 'busy'] };
+        openapi.components.schemas.Status.properties.phase = {
+          $ref: '#/components/schemas/Phase',
+        };
+        openapi.components.schemas.Status.properties.history = {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['at'],
+            properties: { at: { type: 'string', format: 'date-time' } },
+          },
+        };
+      }),
   });
   const history = [...doc.querySelectorAll('.inline-object')].find((d) =>
     d.querySelector('summary').textContent.startsWith('history'),
@@ -503,20 +508,20 @@ test('array item entities and enum types have definitions and nested usage backl
 test('recursive type references terminate while keeping definitions and endpoint backlinks reachable', async () => {
   const { dom, doc, click } = await fixture({
     hash: '#/features/example/api/setStatus',
-    change: (p) => {
-      const cap = p.capabilities[0];
-      cap.openapi.components.schemas.Node = {
-        type: 'object',
-        properties: {
-          value: { type: 'string' },
-          next: { anyOf: [{ $ref: '#/components/schemas/Node' }, { type: 'null' }] },
-          children: { type: 'array', items: { $ref: '#/components/schemas/Node' } },
-        },
-      };
-      cap.operations[1].responses['201'].content['application/json'].schema = {
-        $ref: '#/components/schemas/Node',
-      };
-    },
+    change: (p) =>
+      editOpenapi(p.capabilities[0], ({ openapi, operations }) => {
+        openapi.components.schemas.Node = {
+          type: 'object',
+          properties: {
+            value: { type: 'string' },
+            next: { anyOf: [{ $ref: '#/components/schemas/Node' }, { type: 'null' }] },
+            children: { type: 'array', items: { $ref: '#/components/schemas/Node' } },
+          },
+        };
+        operations[1].responses['201'].content['application/json'].schema = {
+          $ref: '#/components/schemas/Node',
+        };
+      }),
   });
   assert.ok(doc.querySelector('.io-grid').textContent.includes('recursive'));
   await click('.io-grid a[href$="/types/Node"]');
@@ -646,12 +651,13 @@ test('visual editor validates file/link choice without losing the endpoint', asy
 test('shared and expanded request/response objects have no attachment actions; each header owns one', async () => {
   const { dom, doc } = await fixture({
     hash: '#/features/example/api/setStatus',
-    change: (p) => {
+    change: (p) =>
       // Reproduce the screenshot: root refs, path parameters, a JSON body and nested refs.
-      p.capabilities[0].operations[1].requestBody.content['application/json'].schema = {
-        $ref: '#/components/schemas/Status',
-      };
-    },
+      editOpenapi(p.capabilities[0], ({ operations }) => {
+        operations[1].requestBody.content['application/json'].schema = {
+          $ref: '#/components/schemas/Status',
+        };
+      }),
   });
   for (const detail of doc.querySelectorAll('.inline-object')) detail.open = true;
   for (const section of doc.querySelectorAll('.io-grid>section')) {
@@ -903,11 +909,11 @@ test('unsafe design URLs never become actionable viewer links', async () => {
 
 test('nullable object type arrays and false schemas retain their meaning in signatures', async () => {
   const { dom, doc } = await fixture({
-    change: (project) => {
-      const cap = project.capabilities[0];
-      cap.openapi.components.schemas.User.type = ['object', 'null'];
-      cap.openapi.components.schemas.Status.properties.blocked = false;
-    },
+    change: (project) =>
+      editOpenapi(project.capabilities[0], ({ openapi }) => {
+        openapi.components.schemas.User.type = ['object', 'null'];
+        openapi.components.schemas.Status.properties.blocked = false;
+      }),
   });
   assert.ok(
     [...doc.querySelectorAll('.field-type')].some(

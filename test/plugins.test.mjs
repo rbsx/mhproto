@@ -13,7 +13,7 @@ import { contextPacket } from '../src/context.mjs';
 import { targetError } from '../src/visuals.mjs';
 import { packageCandidates } from '../src/plugins.mjs';
 import { createHandler, exportViewer, model } from '../src/server.mjs';
-import { compareModels, contractSnapshot, snapshotProject } from '../viewer/diff.js';
+import { compareModels, contractSnapshot, openapiView, snapshotProject } from '../viewer/diff.js';
 
 const cli = path.join(packageRoot, 'bin/mhproto.mjs');
 const run = (root, ...args) =>
@@ -125,14 +125,21 @@ test('a project assembles presets and plugins, passes options and reports what i
   const project = await loadProject(root);
   assert.equal((await validateProject(project)).filter((i) => i.level === 'error').length, 0);
   assert.match(run(root, 'check'), /1 operations, 2 tables, 1 views/);
-  // OpenAPI keeps its view; other adapters contribute entities without repeating their documents.
+  // Every adapter, OpenAPI included, contributes entities and meta; documents stay in memory.
   const cap = project.capabilities[0];
-  assert.equal(cap.operations[0].operationId, 'getStatus');
   assert.deepEqual(
     cap.entities.map((e) => `${e.adapter}:${e.kind}:${e.id}`),
-    ['sql:table:services', 'sql:table:status_reads', 'flows:screen:home'],
+    [
+      'openapi:operation:getStatus',
+      'sql:table:services',
+      'sql:table:status_reads',
+      'flows:screen:home',
+    ],
   );
+  assert.equal(cap.openapi, undefined);
+  assert.equal(cap.interfaces[0].meta.info.title, 'Example API');
   assert.ok(!JSON.stringify(project).includes('create table'));
+  assert.ok(!JSON.stringify(project).includes('"paths"'));
   assert.deepEqual(cap.files, {
     spec: 'mhproto/capabilities/example/spec.md',
     interface: 'mhproto/interfaces/openapi.yaml',
@@ -342,14 +349,19 @@ test('plugin entities are compared and survive entity-based snapshots; version 1
     saved.project.capabilities[0].entities.map((e) => e.kind),
     ['operation', 'table', 'table'],
   );
-  // A version 1 snapshot stored the OpenAPI view and no entities.
+  // A version 1 snapshot stored the OpenAPI document and operations, and no entities.
   const legacy = structuredClone(before);
   for (const cap of legacy.capabilities) {
+    const { openapi, operations } = openapiView(cap);
     delete cap.interfaces;
     delete cap.entities;
+    Object.assign(cap, { openapi, operations, transitions: [], nonTransitions: [] });
   }
   const v1 = { format: 'mhproto-snapshot', version: 1, label: 'Old', project: legacy };
-  assert.ok(snapshotProject(v1).capabilities[0].operations);
+  assert.deepEqual(
+    snapshotProject(v1).capabilities[0].entities.map((e) => e.id),
+    ['getStatus'],
+  );
   assert.deepEqual(
     compareModels(v1, before).map((c) => [c.kind, c.id, c.status]),
     [

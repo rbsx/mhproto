@@ -1,6 +1,6 @@
 // Scoped, deterministic retrieval. Images, logs and repeated schemas stay outside packets.
 import { builtinRegistry } from './plugins.mjs';
-import { entitiesOf, entityLink, interfacesOf } from '../viewer/diff.js';
+import { entitiesOf, entityLink, interfacesOf, openapiView } from '../viewer/diff.js';
 export { operationRuleIds } from '../viewer/diff.js';
 
 const pick = (value, keys) =>
@@ -11,6 +11,7 @@ function evidence(cap, check) {
   return cap.evidence.results.find((r) => r.id === check.id)?.status ?? 'unchecked';
 }
 const summary = (entity) => pick(entity, ['kind', 'id', 'title', 'summary']);
+const operationsOf = (cap) => openapiView(cap)?.operations ?? [];
 const otherEntities = (cap) => entitiesOf(cap).filter((e) => e.adapter !== 'openapi');
 // Sections every packet can contain, whatever the interface.
 function select(fields, sections, hidden = ['sources']) {
@@ -119,7 +120,7 @@ export function contextPacket(project, options = {}) {
         id: c.id,
         title: c.title,
         url: c.url,
-        operations: (c.operations ?? []).map((o) =>
+        operations: operationsOf(c).map((o) =>
           pick(o, ['operationId', 'method', 'path', 'summary']),
         ),
         ...(otherEntities(c).length ? { entities: otherEntities(c).map(summary) } : {}),
@@ -181,9 +182,7 @@ export function contextPacket(project, options = {}) {
   return {
     ...base,
     ...pick(cap, ['title', 'description', 'url']),
-    operations: (cap.operations ?? []).map((o) =>
-      pick(o, ['operationId', 'method', 'path', 'summary']),
-    ),
+    operations: operationsOf(cap).map((o) => pick(o, ['operationId', 'method', 'path', 'summary'])),
     ...(otherEntities(cap).length ? { entities: otherEntities(cap).map(summary) } : {}),
     rules: cap.rules.map((r) => r.id),
     examples: cap.examples.map((e) => ({ id: e.id, title: e.title })),
