@@ -69,13 +69,18 @@ export const apiVersion = 1;
  * @property {object} project
  * @property {object} capability
  * @property {{adapter: string, file: string, document?: unknown}} interface
- * @property {(ids: string[]) => object[]} rules    Exact rule objects for the given IDs.
- * @property {(entity: Entity) => object[]} examples Example summaries linked to the entity.
+ * @property {(ids: string[]) => object[]} rules     Exact rule objects for the given IDs.
+ * @property {(entity: Entity) => object[]} examples Examples that share a rule with the entity.
  * @property {(entity: Entity) => object[]} checks   Linked checks with their evidence status.
  * @property {(entity: Entity) => object[]} visuals  Visual metadata targeting the entity.
- * @property {(entity: Entity) => object} sources    Contract and implementation files.
+ * @property {object[]} visualMetadata               Every visual in the project, without bytes.
+ * @property {(check: object) => string} evidence    passing, failing, stale or unchecked.
+ * @property {(entity: Entity) => object} sources    The interface file and tracked implementation.
  * @property {(entity: Entity) => Record<string, unknown>} defaults
- *   The generic sections (definition, links, behaviour, examples, checks, visuals, sources).
+ *   The generic sections: definition, links, linkedFrom, behaviour, examples, checks, visuals, sources.
+ * @property {(sections: Record<string, unknown>, options?: {hidden?: string[]}) => Record<string, unknown>} select
+ *   Apply `--section`. Without it, every section except `hidden` (default: sources) is kept.
+ *   An unknown section name throws an error that lists the available ones.
  */
 
 /**
@@ -88,7 +93,8 @@ export const apiVersion = 1;
  * @property {(example: object, context: ValidateContext) => void} [validateExample]
  *   Check an example's payloads against the source, when the adapter can.
  * @property {(entity: Entity, context: PacketContext) => Record<string, unknown>} [packet]
- *   Sections for `mhproto context --entity kind:id`. Defaults to `context.defaults(entity)`.
+ *   The body of `mhproto context --entity kind:id`; project, capability and digest are added.
+ *   Without it: `{ entity, ...context.select(context.defaults(entity)) }`.
  * @property {(target: object, context: {capability: object, project: object}) => string | null | undefined} [visualTarget]
  *   Validate a visual target of one of this adapter's kinds. Return an error, null when valid,
  *   or undefined to fall back to "the entity exists".

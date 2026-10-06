@@ -32,21 +32,25 @@ exact bundled-version advisory audit and the build dependency audit. See
 Keep changes scoped. Add regression tests for observable bugs. Preserve the
 single-owner attachment policy and the distinction between failed, stale and
 unchecked evidence. Agent context must retain exact rules and explicit deferred
-references. Add a screenshot for changes to the reading flow.
+references. Source-specific code belongs in a plugin; the core works on entities
+(see [doc/plugins.md](doc/plugins.md)). Add a screenshot for changes to the reading flow.
 
 ## Code map
 
 | Area                                                | Files                                 |
 | --------------------------------------------------- | ------------------------------------- |
 | Contract input and validation                       | src/core.mjs, src/config.mjs          |
+| Plugin API, resolution and presets                  | src/plugin.mjs, src/plugins.mjs       |
+| Built-in OpenAPI plugin                             | src/plugins/openapi/                  |
 | Scoped agent context                                | src/context.mjs                       |
 | Verification and Node reporter                      | src/verify.mjs, src/node-reporter.mjs |
 | Contained writes and attachment metadata            | src/paths.mjs, src/visuals.mjs        |
 | Local HTTP viewer and offline export                | src/server.mjs                        |
 | CLI workflows                                       | bin/mhproto.mjs                       |
 | Reading, types, attachment ownership and navigation | viewer/app.js                         |
-| Pure snapshots and semantic comparison              | viewer/diff.js                        |
+| Entity view, snapshots and semantic comparison      | viewer/diff.js                        |
 | Agent workflows and format reference                | skills/                               |
+| Example plugin                                      | examples/plugin-sql/                  |
 
 There is no compilation step. The shared comparison module runs in Node and in
 the browser. Standalone export inlines that module, the viewer and Mermaid.

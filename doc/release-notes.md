@@ -1,3 +1,19 @@
+# Unreleased
+
+- **Building blocks.** A small core plus plugins, configured with `presets` and `plugins` in
+  `mhproto.yaml` like Babel. OpenAPI is the built-in plugin and loads by default; existing
+  projects need no changes. Plugins add interface adapters, entity kinds, checks, agent context,
+  skills and viewer renderers through one API (`mhproto/plugin`). See doc/plugins.md.
+- **Any source as entities.** Capabilities can list several `interfaces`. Validation, context
+  (`--entity KIND:ID`), comparison and the viewer work on entities, with links between them
+  (`x-mhproto-links` in OpenAPI).
+- **Optional parts.** A capability needs only `id` and `spec`; `init --minimal` starts from rules.
+- **Skills à la carte.** `skills --only`, `--remove` and `--check`; installs never overwrite. The
+  format reference is the shared `mhproto-format` skill.
+- `mhproto plugins` lists what a project loads.
+- Snapshots are version 2 (entity-based). Version 1 snapshots and earlier exported previews still
+  load as baselines.
+
 # MHProto 0.8.0-preview.0
 
 Published 2026-10-03 as a development preview on the npm `next` channel.
