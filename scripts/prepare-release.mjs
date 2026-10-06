@@ -10,6 +10,13 @@ const metadata = JSON.parse(await readFile(path.join(root, 'package.json')));
 assert.ok(!metadata.private, 'Release metadata must permit publication');
 assert.match(metadata.version, /-preview\.\d+$/, 'Prepare an explicit preview version');
 assert.equal(metadata.publishConfig.tag, 'next');
+// node --test prints the number of tests it ran; the manifest records it.
+const countTests = () =>
+  Number(
+    /ℹ tests (\d+)/.exec(
+      spawnSync('npm', ['test'], { cwd: root, encoding: 'utf8' }).stdout ?? '',
+    )?.[1] ?? 0,
+  );
 const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
 assert.equal(
   git('status', '--porcelain'),
@@ -62,7 +69,7 @@ const report = {
   unpackedSize: packed.unpackedSize,
   files: packed.files,
   checks: [
-    'format and 58 tests',
+    `format and ${countTests()} tests`,
     'npm audit and registry signatures',
     'clean Mermaid source rebuild and original notices',
     '79-version bundled audit',

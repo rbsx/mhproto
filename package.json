@@ -1,6 +1,6 @@
 {
   "name": "mhproto",
-  "version": "0.8.0-preview.0",
+  "version": "0.9.0-preview.0",
   "description": "Machine–Human Protocol: a shared contract workspace for humans and coding agents",
   "type": "module",
   "bin": {
