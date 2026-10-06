@@ -313,11 +313,13 @@ try {
     if (has('json')) console.log(JSON.stringify({ name: project.name, issues }, null, 2));
     else {
       const counts = new Map();
+      let operations = 0;
       for (const cap of project.capabilities)
         for (const entity of cap.entities)
-          counts.set(entity.kind, (counts.get(entity.kind) ?? 0) + 1);
+          if (entity.adapter === 'openapi') operations += entity.kind === 'operation' ? 1 : 0;
+          else counts.set(entity.kind, (counts.get(entity.kind) ?? 0) + 1);
       console.log(
-        `${project.name}: ${project.capabilities.length} capability, ${project.capabilities.reduce((n, c) => n + c.rules.length, 0)} rules, ${project.capabilities.reduce((n, c) => n + (c.operations ?? []).length, 0)} operations` +
+        `${project.name}: ${project.capabilities.length} capability, ${project.capabilities.reduce((n, c) => n + c.rules.length, 0)} rules, ${operations} operations` +
           [...counts]
             .map(([kind, n]) => `, ${n} ${project.kinds[kind].plural.toLowerCase()}`)
             .join(''),

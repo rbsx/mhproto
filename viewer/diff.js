@@ -35,12 +35,10 @@ export function canonical(value, key = '', parents = []) {
   return value;
 }
 // Entity view. Every interface adapter normalises its source into entities:
-// { adapter, file, kind, id, title, summary, rules, links, data }.
-// OpenAPI keeps its original capability fields (openapi, operations, transitions,
-// nonTransitions) as the in-memory view the viewer renders. Its entities are always
-// derived from that view, so the two cannot disagree; serialised snapshots store
-// entities instead and the view is rebuilt when they are read.
-const openapiView = ['openapi', 'operations', 'transitions', 'nonTransitions'];
+// { adapter, file, kind, id, title, summary, rules, links, data }, plus interface-wide
+// `meta`. OpenAPI is stored the same way: operations and named schemas are entities,
+// and the rest of the document is its meta.
+const isOpenapi = (item) => item.adapter === 'openapi';
 const linkedRules = (op) => [
   ...new Set(
     [
@@ -97,40 +95,107 @@ export function openapiEntities({ operations = [], document, file }) {
     })),
   ];
 }
-export function entitiesOf(cap) {
-  const others = (cap?.entities ?? []).filter((e) => e.adapter !== 'openapi');
-  if (!cap?.openapi) return others;
-  return [
-    ...openapiEntities({
-      operations: cap.operations,
-      document: cap.openapi,
-      file: cap.files?.interface,
-    }),
-    ...others,
-  ];
+// The interface-wide part of an OpenAPI document: everything except operations and
+// named schemas, which are entities.
+export function openapiGlobals(doc) {
+  const { paths, components, ...api } = doc,
+    { schemas, ...shared } = components ?? {};
+  const pathItems = Object.fromEntries(
+    Object.entries(paths ?? {}).map(([url, item]) => [
+      url,
+      Object.fromEntries(
+        Object.entries(item).filter(
+          ([key]) =>
+            ![
+              'get',
+              'post',
+              'put',
+              'patch',
+              'delete',
+              'options',
+              'head',
+              'trace',
+              'parameters',
+            ].includes(key),
+        ),
+      ),
+    ]),
+  );
+  return { ...api, components: shared, pathItems };
 }
-export function interfacesOf(cap) {
-  return (
-    cap?.interfaces ?? (cap?.openapi ? [{ adapter: 'openapi', file: cap.files?.interface }] : [])
-  ).map((item) => (item.adapter === 'openapi' ? { ...item, document: cap.openapi } : item));
-}
-function withOpenapiView(cap) {
-  if (cap.openapi || !Array.isArray(cap.interfaces)) return cap;
-  const document = cap.interfaces.find((i) => i.adapter === 'openapi')?.document;
-  if (!document) return cap;
+// Earlier models and version 1 snapshots kept the OpenAPI document and operations on
+// the capability; the first version 2 snapshots kept the whole document on the interface.
+function normaliseCapability(cap) {
+  if (cap.openapi) {
+    const { openapi: document, operations, transitions, nonTransitions, ...rest } = cap;
+    const file = cap.files?.interface;
+    const item = { adapter: 'openapi', file, meta: openapiGlobals(document) };
+    const interfaces = cap.interfaces ?? [];
+    return {
+      ...rest,
+      interfaces: interfaces.some(isOpenapi)
+        ? interfaces.map((i) => (isOpenapi(i) ? item : i))
+        : [item, ...interfaces],
+      entities: [
+        ...openapiEntities({ operations, document, file }),
+        ...(cap.entities ?? []).filter((e) => !isOpenapi(e)),
+      ],
+    };
+  }
+  // Loaded models keep documents as non-enumerable, in-memory properties.
+  const stored = (i) => isOpenapi(i) && Object.prototype.propertyIsEnumerable.call(i, 'document');
+  if (!cap.interfaces?.some(stored)) return cap;
   return {
     ...cap,
+    interfaces: cap.interfaces.map((i) =>
+      stored(i) ? { adapter: 'openapi', file: i.file, meta: openapiGlobals(i.document) } : i,
+    ),
+  };
+}
+export function entitiesOf(cap) {
+  if (!cap) return [];
+  return (cap.openapi ? normaliseCapability(cap).entities : cap.entities) ?? [];
+}
+export function interfacesOf(cap) {
+  if (!cap) return [];
+  return (cap.openapi ? normaliseCapability(cap).interfaces : cap.interfaces) ?? [];
+}
+// The OpenAPI document and operations as OpenAPI code reads them, rebuilt from meta
+// and entities. Rebuilt objects share entity data, so schema identity is stable.
+const views = new WeakMap();
+export function openapiView(cap) {
+  const item = interfacesOf(cap).find(isOpenapi);
+  if (!item) return null;
+  const entities = entitiesOf(cap);
+  // Edits replace meta or entities; both invalidate the view.
+  const cached = views.get(entities);
+  if (cached?.item === item && cached.meta === item.meta && cached.count === entities.length)
+    return cached.view;
+  const { pathItems, components, ...api } = item.meta ?? {};
+  const own = entities.filter(isOpenapi);
+  const document = {
+    ...api,
+    paths: pathItems ?? {},
+    components: {
+      ...components,
+      schemas: Object.fromEntries(
+        own.filter((e) => e.kind === 'schema').map((e) => [e.id, e.data.schema]),
+      ),
+    },
+  };
+  const view = {
+    file: item.file,
     openapi: document,
-    operations: cap.entities
-      .filter((e) => e.adapter === 'openapi' && e.kind === 'operation')
-      .map((e) => e.data),
+    operations: own.filter((e) => e.kind === 'operation').map((e) => e.data),
     transitions: document['x-phase-transitions'] ?? [],
     nonTransitions: document['x-phase-unchanged-by'] ?? [],
   };
+  views.set(entities, { item, meta: item.meta, count: entities.length, view });
+  return view;
 }
 export function snapshotProject(value) {
   const wrapped = ['mhproto-snapshot', 'bive-snapshot'].includes(value?.format);
-  // Version 1 stored the OpenAPI view; version 2 stores interfaces and entities.
+  // Version 1 stored the OpenAPI document on capabilities; version 2 stores interfaces and entities.
   if (wrapped && ![1, 2].includes(value.version))
     throw new Error('Unsupported MHProto snapshot version.');
   const project = wrapped ? value.project : value;
@@ -159,9 +224,10 @@ export function snapshotProject(value) {
       throw new Error('The baseline does not contain a valid MHProto contract.');
     ids.add(cap.id);
   }
-  return wrapped && value.version === 2
-    ? { ...project, capabilities: project.capabilities.map(withOpenapiView) }
-    : project;
+  const capabilities = project.capabilities.map(normaliseCapability);
+  return capabilities.every((cap, i) => cap === project.capabilities[i])
+    ? project
+    : { ...project, capabilities };
 }
 export function contractSnapshot(
   value,
@@ -179,11 +245,7 @@ export function contractSnapshot(
         name: project.name,
         system: project.system ?? '',
         visuals: project.visuals ?? [],
-        capabilities: project.capabilities.map(({ evidence, digest, ...cap }) => ({
-          ...Object.fromEntries(Object.entries(cap).filter(([key]) => !openapiView.includes(key))),
-          interfaces: interfacesOf(cap),
-          entities: entitiesOf(cap),
-        })),
+        capabilities: project.capabilities.map(({ evidence, digest, ...cap }) => cap),
       },
     }),
   );
@@ -271,46 +333,21 @@ export function compareModels(beforeValue, afterValue) {
   );
   const oldCaps = new Map(before.capabilities.map((c) => [c.id, c])),
     newCaps = new Map(after.capabilities.map((c) => [c.id, c]));
-  const openapiGlobals = (doc) => {
-    const { paths, components, ...api } = doc,
-      { schemas, ...shared } = components ?? {};
-    const pathItems = Object.fromEntries(
-      Object.entries(paths ?? {}).map(([url, item]) => [
-        url,
-        Object.fromEntries(
-          Object.entries(item).filter(
-            ([key]) =>
-              ![
-                'get',
-                'post',
-                'put',
-                'patch',
-                'delete',
-                'options',
-                'head',
-                'trace',
-                'parameters',
-              ].includes(key),
-          ),
-        ),
-      ]),
-    );
-    return { ...api, components: shared, pathItems };
-  };
   const feature = (cap) => {
     if (!cap) return undefined;
     const { operations, ruleTitles, ...presentation } = cap.presentation ?? {};
-    const others = interfacesOf(cap).filter((i) => i.adapter !== 'openapi');
+    const openapi = interfacesOf(cap).find(isOpenapi),
+      others = interfacesOf(cap).filter((i) => !isOpenapi(i));
     return {
       title: cap.title ?? cap.id,
       description: cap.description ?? '',
       url: cap.url ?? '',
       behaviour: behaviourText(cap.prose),
-      ...(cap.openapi
+      ...(openapi
         ? {
-            api: openapiGlobals(cap.openapi),
-            transitions: cap.transitions ?? [],
-            nonTransitions: cap.nonTransitions ?? [],
+            api: openapi.meta ?? {},
+            transitions: openapi.meta?.['x-phase-transitions'] ?? [],
+            nonTransitions: openapi.meta?.['x-phase-unchanged-by'] ?? [],
           }
         : {}),
       ...(others.length

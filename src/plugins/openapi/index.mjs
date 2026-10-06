@@ -1,6 +1,11 @@
 // Built-in OpenAPI 3.1 support, written against the public plugin API.
 import { definePlugin, shapeAsserter } from '../../plugin.mjs';
-import { openapiEntities, operationRuleIds } from '../../../viewer/diff.js';
+import {
+  openapiEntities,
+  openapiGlobals,
+  openapiView,
+  operationRuleIds,
+} from '../../../viewer/diff.js';
 import { localRef, methods, operationList, resolveObject, schemaValidator } from './document.mjs';
 
 const text = { type: 'string', minLength: 1 };
@@ -58,10 +63,12 @@ function validatorFor(document) {
   if (!validators.has(document)) validators.set(document, schemaValidator(document));
   return validators.get(document);
 }
-const findOperation = (cap, id) => cap.operations.find((o) => o.operationId === id);
+const findOperation = (cap, id) => openapiView(cap).operations.find((o) => o.operationId === id);
+// The parsed document while the project is loaded; otherwise the view rebuilt from entities.
+const documentOf = (ctx) => ctx.interface?.document ?? openapiView(ctx.capability).openapi;
 
-function validate({ document: doc }, ctx) {
-  const cap = ctx.capability;
+function validate({ document, entities }, ctx) {
+  const doc = document ?? documentOf(ctx);
   if (!['3.1.0', '3.1.1', '3.1.2'].includes(doc?.openapi))
     ctx.error('V0 supports OpenAPI 3.1 JSON Schema contracts');
   if (!doc?.info?.title || !doc?.info?.version)
@@ -119,7 +126,7 @@ function validate({ document: doc }, ctx) {
     }
   }
   // Operation IDs and rule links are checked by core for every entity.
-  for (const op of cap.operations) {
+  for (const op of entities.filter((e) => e.kind === 'operation').map((e) => e.data)) {
     if (!op.responses || !Object.keys(op.responses).length)
       ctx.error(`${op.operationId} has no responses`);
     for (const param of op.path.matchAll(/\{([^}]+)\}/g)) {
@@ -136,7 +143,10 @@ function validate({ document: doc }, ctx) {
     for (const media of Object.values(op.requestBody?.content ?? {}))
       validateMedia(media, `${op.operationId} request`);
   }
-  for (const transition of [...cap.transitions, ...cap.nonTransitions])
+  for (const transition of [
+    ...(doc['x-phase-transitions'] ?? []),
+    ...(doc['x-phase-unchanged-by'] ?? []),
+  ])
     if (transition.clause) ctx.cite(transition.clause, 'Transition');
 }
 
@@ -146,7 +156,7 @@ function validateExample(example, ctx) {
   if (!op) return;
   let validates;
   try {
-    validates = validatorFor(cap.openapi);
+    validates = validatorFor(documentOf(ctx));
   } catch {
     return; // Reported by validate().
   }
@@ -158,7 +168,8 @@ function validateExample(example, ctx) {
       ctx.error(`${context}: ${error.message}`);
     }
   };
-  const schema = resolveObject(cap.openapi, op.requestBody)?.content?.['application/json']?.schema;
+  const schema = resolveObject(documentOf(ctx), op.requestBody)?.content?.['application/json']
+    ?.schema;
   if (schema !== undefined) validateData(schema, example.request.body, example.id + ' request');
   if (example.response) {
     const code = String(example.response.status);
@@ -191,7 +202,7 @@ export const schemaRefs = (value) => {
 function rootSchema(cap, value) {
   const name = value?.$ref?.match(/^#\/components\/schemas\/([^/]+)$/)?.[1];
   if (!name) return value;
-  const schema = localRef(cap.openapi, value.$ref);
+  const schema = localRef(openapiView(cap).openapi, value.$ref);
   return {
     name: decodeURIComponent(name).replaceAll('~1', '/').replaceAll('~0', '~'),
     ...(typeof schema === 'boolean' ? { schema } : schema),
@@ -307,7 +318,7 @@ function resolve(cap, schema) {
   while (current?.$ref) {
     if (seen.has(current.$ref)) return {};
     seen.add(current.$ref);
-    let value = cap.openapi;
+    let value = openapiView(cap).openapi;
     for (const part of current.$ref.slice(2).split('/'))
       value = value?.[part.replaceAll('~1', '/').replaceAll('~0', '~')];
     current = value;
@@ -327,7 +338,7 @@ function propertyAt(cap, schema, parts) {
 }
 function visualTarget(target, { capability: cap }) {
   if (target.kind === 'schema')
-    return Object.hasOwn(cap.openapi.components?.schemas ?? {}, target.id)
+    return Object.hasOwn(openapiView(cap).openapi.components.schemas, target.id)
       ? null
       : 'Visual references an unknown schema';
   if (!['operation', 'request', 'response', 'field'].includes(target.kind)) return undefined;
@@ -395,6 +406,7 @@ export default definePlugin(() => ({
         return {
           document,
           entities: openapiEntities({ operations: operationList(document), document, file }),
+          meta: openapiGlobals(document),
         };
       },
       validate,
@@ -404,4 +416,5 @@ export default definePlugin(() => ({
       visualTarget,
     },
   },
+  viewer: new URL('./viewer.js', import.meta.url),
 }));

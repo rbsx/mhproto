@@ -13,7 +13,7 @@ import { contextPacket } from '../src/context.mjs';
 import { targetError } from '../src/visuals.mjs';
 import { packageCandidates } from '../src/plugins.mjs';
 import { createHandler, exportViewer, model } from '../src/server.mjs';
-import { compareModels, contractSnapshot, snapshotProject } from '../viewer/diff.js';
+import { compareModels, contractSnapshot, openapiView, snapshotProject } from '../viewer/diff.js';
 
 const cli = path.join(packageRoot, 'bin/mhproto.mjs');
 const run = (root, ...args) =>
@@ -125,14 +125,21 @@ test('a project assembles presets and plugins, passes options and reports what i
   const project = await loadProject(root);
   assert.equal((await validateProject(project)).filter((i) => i.level === 'error').length, 0);
   assert.match(run(root, 'check'), /1 operations, 2 tables, 1 views/);
-  // OpenAPI keeps its view; other adapters contribute entities without repeating their documents.
+  // Every adapter, OpenAPI included, contributes entities and meta; documents stay in memory.
   const cap = project.capabilities[0];
-  assert.equal(cap.operations[0].operationId, 'getStatus');
   assert.deepEqual(
     cap.entities.map((e) => `${e.adapter}:${e.kind}:${e.id}`),
-    ['sql:table:services', 'sql:table:status_reads', 'flows:screen:home'],
+    [
+      'openapi:operation:getStatus',
+      'sql:table:services',
+      'sql:table:status_reads',
+      'flows:screen:home',
+    ],
   );
+  assert.equal(cap.openapi, undefined);
+  assert.equal(cap.interfaces[0].meta.info.title, 'Example API');
   assert.ok(!JSON.stringify(project).includes('create table'));
+  assert.ok(!JSON.stringify(project).includes('"paths"'));
   assert.deepEqual(cap.files, {
     spec: 'mhproto/capabilities/example/spec.md',
     interface: 'mhproto/interfaces/openapi.yaml',
@@ -342,14 +349,19 @@ test('plugin entities are compared and survive entity-based snapshots; version 1
     saved.project.capabilities[0].entities.map((e) => e.kind),
     ['operation', 'table', 'table'],
   );
-  // A version 1 snapshot stored the OpenAPI view and no entities.
+  // A version 1 snapshot stored the OpenAPI document and operations, and no entities.
   const legacy = structuredClone(before);
   for (const cap of legacy.capabilities) {
+    const { openapi, operations } = openapiView(cap);
     delete cap.interfaces;
     delete cap.entities;
+    Object.assign(cap, { openapi, operations, transitions: [], nonTransitions: [] });
   }
   const v1 = { format: 'mhproto-snapshot', version: 1, label: 'Old', project: legacy };
-  assert.ok(snapshotProject(v1).capabilities[0].operations);
+  assert.deepEqual(
+    snapshotProject(v1).capabilities[0].entities.map((e) => e.id),
+    ['getStatus'],
+  );
   assert.deepEqual(
     compareModels(v1, before).map((c) => [c.kind, c.id, c.status]),
     [
@@ -378,7 +390,8 @@ async function render(project, hash = '') {
     ['app.js', 'diff.js'].map((name) => readFile(path.join(packageRoot, 'viewer', name), 'utf8')),
   );
   const { bundleViewer } = await import('../src/server.mjs');
-  await window.eval(`(async()=>{${bundleViewer(app, diff)}\n})()`);
+  const openapi = await readFile(path.join(packageRoot, 'src/plugins/openapi/viewer.js'), 'utf8');
+  await window.eval(`(async()=>{${openapi}\n${bundleViewer(app, diff)}\n})()`);
   return { window, doc };
 }
 
@@ -600,4 +613,47 @@ test('snapshots with malformed entities are rejected before rendering', async ()
   const saved = contractSnapshot(project);
   saved.project.capabilities[0].entities[1].kind = '"><img src=x onerror=alert(1)>';
   assert.throws(() => snapshotProject(saved), /valid MHProto contract/);
+});
+
+test('the OpenAPI view follows edits and comparisons tolerate interfaces without meta', async () => {
+  const project = await model(await sqlProject()),
+    cap = project.capabilities[0];
+  assert.equal(openapiView(cap).openapi.info.title, 'Example API');
+  cap.interfaces[0].meta = { ...cap.interfaces[0].meta, info: { title: 'Renamed', version: '2' } };
+  assert.equal(openapiView(cap).openapi.info.title, 'Renamed');
+  cap.entities.splice(0, 1);
+  assert.equal(openapiView(cap).operations.length, 0);
+  const bare = structuredClone(project);
+  delete bare.capabilities[0].interfaces[0].meta;
+  assert.ok(Array.isArray(compareModels(bare, project)));
+});
+
+test('a throwing page-level hook is contained and built-in routes stay built-in', async () => {
+  const project = await model(await sqlProject());
+  const { window, doc } = await render(project, '#/features/example/sources');
+  window.mhprotoViewerPlugins.push({
+    name: 'rogue',
+    overview() {
+      throw new Error('boom');
+    },
+    pages: {
+      sources: () => ({ html: 'taken' }),
+      crash: () => {
+        throw new Error('page boom');
+      },
+    },
+  });
+  window.console.error = () => {};
+  const go = async (hash) => {
+    const navigation = new Promise((r) => window.addEventListener('hashchange', r, { once: true }));
+    window.location.hash = hash;
+    await navigation;
+    await window.mhprotoReady;
+  };
+  await go('#/features/example/sources?x=1');
+  assert.equal(doc.querySelector('h1').textContent, 'Sources');
+  await go('#/features/example');
+  assert.ok(doc.querySelector('#api .endpoint'), 'other plugins still render');
+  await go('#/features/example/crash/x');
+  assert.match(doc.querySelector('#content .error').textContent, /rogue plugin: page boom/);
 });

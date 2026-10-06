@@ -37,20 +37,20 @@ references. Source-specific code belongs in a plugin; the core works on entities
 
 ## Code map
 
-| Area                                                | Files                                 |
-| --------------------------------------------------- | ------------------------------------- |
-| Contract input and validation                       | src/core.mjs, src/config.mjs          |
-| Plugin API, resolution and presets                  | src/plugin.mjs, src/plugins.mjs       |
-| Built-in OpenAPI plugin                             | src/plugins/openapi/                  |
-| Scoped agent context                                | src/context.mjs                       |
-| Verification and Node reporter                      | src/verify.mjs, src/node-reporter.mjs |
-| Contained writes and attachment metadata            | src/paths.mjs, src/visuals.mjs        |
-| Local HTTP viewer and offline export                | src/server.mjs                        |
-| CLI workflows                                       | bin/mhproto.mjs                       |
-| Reading, types, attachment ownership and navigation | viewer/app.js                         |
-| Entity view, snapshots and semantic comparison      | viewer/diff.js                        |
-| Agent workflows and format reference                | skills/                               |
-| Example plugin                                      | examples/plugin-sql/                  |
+| Area                                              | Files                                 |
+| ------------------------------------------------- | ------------------------------------- |
+| Contract input and validation                     | src/core.mjs, src/config.mjs          |
+| Plugin API, resolution and presets                | src/plugin.mjs, src/plugins.mjs       |
+| Built-in OpenAPI plugin and its viewer pages      | src/plugins/openapi/                  |
+| Scoped agent context                              | src/context.mjs                       |
+| Verification and Node reporter                    | src/verify.mjs, src/node-reporter.mjs |
+| Contained writes and attachment metadata          | src/paths.mjs, src/visuals.mjs        |
+| Local HTTP viewer and offline export              | src/server.mjs                        |
+| CLI workflows                                     | bin/mhproto.mjs                       |
+| Viewer shell: reading, attachments and navigation | viewer/app.js                         |
+| Entity view, snapshots and semantic comparison    | viewer/diff.js                        |
+| Agent workflows and format reference              | skills/                               |
+| Example plugin                                    | examples/plugin-sql/                  |
 
 There is no compilation step. The shared comparison module runs in Node and in
 the browser. Standalone export inlines that module, the viewer and Mermaid.

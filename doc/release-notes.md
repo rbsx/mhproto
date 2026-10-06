@@ -11,6 +11,9 @@
 - **Skills à la carte.** `skills --only`, `--remove` and `--check`; installs never overwrite. The
   format reference is the shared `mhproto-format` skill.
 - `mhproto plugins` lists what a project loads.
+- OpenAPI is stored and rendered like any plugin: its endpoint and type pages are the OpenAPI
+  plugin's viewer script, and the model has no OpenAPI-specific capability fields
+  (`openapiView()` rebuilds them).
 - Snapshots are version 2 (entity-based). Version 1 snapshots and earlier exported previews still
   load as baselines.
 

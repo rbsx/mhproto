@@ -1,4 +1,4 @@
-import { temporaryDirectory as mkdtemp } from './helpers.mjs';
+import { temporaryDirectory as mkdtemp, editOpenapi } from './helpers.mjs';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFile, writeFile } from 'node:fs/promises';
@@ -52,7 +52,7 @@ test('comparison ignores runtime evidence, key ordering and unordered contract s
     after = structuredClone(project);
   const cap = after.capabilities[0],
     old = project.capabilities[0];
-  old.openapi.components = {
+  const components = {
     schemas: {
       Sample: {
         type: 'object',
@@ -61,12 +61,15 @@ test('comparison ignores runtime evidence, key ordering and unordered contract s
       },
     },
   };
-  cap.openapi.components = structuredClone(old.openapi.components);
-  cap.openapi.components.schemas.Sample = {
-    properties: { b: { enum: ['y', 'x'], type: 'string' }, a: { type: 'string' } },
-    required: ['b', 'a'],
-    type: 'object',
-  };
+  editOpenapi(old, ({ openapi }) => (openapi.components = structuredClone(components)));
+  editOpenapi(cap, ({ openapi }) => {
+    openapi.components = structuredClone(components);
+    openapi.components.schemas.Sample = {
+      properties: { b: { enum: ['y', 'x'], type: 'string' }, a: { type: 'string' } },
+      required: ['b', 'a'],
+      type: 'object',
+    };
+  });
   after.root = '/different';
   after.issues = [{ level: 'warning' }];
   cap.digest = 'changed';
@@ -80,26 +83,30 @@ test('comparison covers behaviour, API globals, nested types, examples, checks a
     after = structuredClone(project),
     cap = after.capabilities[0];
   cap.description = 'Loads status';
-  cap.openapi.security = [{ token: [] }];
+  editOpenapi(cap, ({ openapi }) => (openapi.security = [{ token: [] }]));
   cap.presentation = { operations: { getStatus: { behaviour: 'Retry safely' } } };
   cap.rules.push({ id: 'EXAMPLE-B-2', text: 'New rule' });
   cap.prose += '\n- **EXAMPLE-B-2** New rule\n';
-  project.capabilities[0].openapi.components = {
-    schemas: {
-      Sample: {
-        type: 'object',
-        properties: { score: { type: 'number', minimum: 0 }, optional: { default: null } },
+  editOpenapi(project.capabilities[0], ({ openapi }) => {
+    openapi.components = {
+      schemas: {
+        Sample: {
+          type: 'object',
+          properties: { score: { type: 'number', minimum: 0 }, optional: { default: null } },
+        },
       },
-    },
-  };
-  cap.openapi.components = {
-    schemas: {
-      Sample: {
-        type: 'object',
-        properties: { score: { type: 'number', minimum: 1 }, optional: { default: false } },
+    };
+  });
+  editOpenapi(cap, ({ openapi }) => {
+    openapi.components = {
+      schemas: {
+        Sample: {
+          type: 'object',
+          properties: { score: { type: 'number', minimum: 1 }, optional: { default: false } },
+        },
       },
-    },
-  };
+    };
+  });
   cap.examples = [];
   cap.checks.push({ id: 'NEW-V-1', rules: ['EXAMPLE-B-2'], command: ['node', 'check.mjs'] });
   after.visuals = [
@@ -217,6 +224,8 @@ test('standalone export embeds the selected baseline and runs its shared compari
   };
   dom.window.scrollTo = () => {};
   dom.window.mermaid = { initialize() {}, render: async () => ({ svg: '<svg></svg>' }) };
+  for (const script of dom.window.document.querySelectorAll('script:not([type]):not([src])'))
+    dom.window.eval(script.textContent);
   await dom.window.eval(
     `(async()=>{${html.match(/<script type="module">([\s\S]*?)<\/script>/)[1]}\n})()`,
   );
