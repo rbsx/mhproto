@@ -65,7 +65,7 @@ const ui = Object.freeze({
           (i < values.length
             ? [values[i]]
                 .flat()
-                .map((v) => (v?.[trusted] ? v.value : escape(v)))
+                .map((v) => (v?.[trusted] ? v.value : v === false || v == null ? '' : escape(v)))
                 .join('')
             : ''),
         '',
@@ -1069,7 +1069,7 @@ function changesPage(id) {
         .join('')}</ul></section>`;
     })
     .join('');
-  return `<h1>Changes</h1><p class="description">${baseline ? escape(baselineLabel()) + ' → Current spec' : 'Save the current spec before editing, or choose an earlier snapshot to compare.'}</p>${baseline?.createdAt ? `<p class="section-note">Baseline saved ${escape(new Date(baseline.createdAt).toLocaleString())}</p>` : ''}${baseline ? `<p class="change-counts">${counts}</p><div class="page-actions"><button class="text-button" data-copy-url>Copy page link</button><button class="text-button" data-download-snapshot>Download current snapshot</button></div>` : ''}${comparisonSetup()}${baseline && comparisonChanges.length ? `<label class="changes-filter">Show <select id="changes-filter">${['all', 'operation', 'schema', ...new Set([...project.capabilities, ...(baselineProject?.capabilities ?? [])].flatMap((c) => pluginEntities(c).map((e) => e.kind))), 'rule', 'feature', 'example', 'check', 'visual', 'system'].map((k) => `<option value="${k}"${comparisonFilter === k ? ' selected' : ''}>${k === 'all' ? 'All changes' : escape(kindLabel(k))}</option>`).join('')}</select></label>${groups || '<p class="empty">No changes in this category.</p>'}` : baseline ? '<p class="empty">No spec changes since this baseline.</p>' : ''}`;
+  return `<h1>Changes</h1><p class="description">${baseline ? escape(baselineLabel()) + ' → Current spec' : 'Save the current spec before editing, or choose an earlier snapshot to compare.'}</p>${baseline?.createdAt ? `<p class="section-note">Baseline saved ${escape(new Date(baseline.createdAt).toLocaleString())}</p>` : ''}${baseline ? `<p class="change-counts">${counts}</p><div class="page-actions"><button class="text-button" data-copy-url>Copy page link</button><button class="text-button" data-download-snapshot>Download current snapshot</button></div>` : ''}${comparisonSetup()}${baseline && comparisonChanges.length ? `<label class="changes-filter">Show <select id="changes-filter">${['all', 'operation', 'schema', ...new Set([...project.capabilities, ...(baselineProject?.capabilities ?? [])].flatMap((c) => pluginEntities(c).map((e) => e.kind))), 'rule', 'feature', 'example', 'check', 'visual', 'system'].map((k) => `<option value="${escape(k)}"${comparisonFilter === k ? ' selected' : ''}>${k === 'all' ? 'All changes' : escape(kindLabel(k))}</option>`).join('')}</select></label>${groups || '<p class="empty">No changes in this category.</p>'}` : baseline ? '<p class="empty">No spec changes since this baseline.</p>' : ''}`;
 }
 function comparisonBar() {
   return comparisonEnabled && baseline

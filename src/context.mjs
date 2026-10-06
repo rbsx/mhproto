@@ -38,7 +38,6 @@ function packetContext(project, cap, entity, visualMetadata, sections) {
     visualMetadata.filter(
       (v) => v.target.capability === cap.id && v.target.kind === e.kind && v.target.id === e.id,
     );
-  const entities = entitiesOf(cap);
   const context = {
     project,
     capability: cap,
@@ -62,13 +61,18 @@ function packetContext(project, cap, entity, visualMetadata, sections) {
           target && entitiesOf(target).find((x) => x.kind === link.kind && x.id === link.id);
         return { ...link, ...(found?.title ? { title: found.title } : {}) };
       }),
-      linkedFrom: entities
-        .filter((x) =>
-          x.links.some(
-            (l) => (l.capability ?? cap.id) === cap.id && l.kind === e.kind && l.id === e.id,
-          ),
-        )
-        .map(summary),
+      linkedFrom: project.capabilities.flatMap((other) =>
+        entitiesOf(other)
+          .filter((x) =>
+            x.links.some(
+              (l) => (l.capability ?? other.id) === cap.id && l.kind === e.kind && l.id === e.id,
+            ),
+          )
+          .map((x) => ({
+            ...(other.id !== cap.id ? { capability: other.id } : {}),
+            ...summary(x),
+          })),
+      ),
       behaviour: { rules: cap.rules.filter((r) => e.rules.includes(r.id)) },
       examples: context.examples(e),
       checks: checksFor(e),
@@ -124,15 +128,19 @@ export function contextPacket(project, options = {}) {
         ? 'mhproto context --capability ID --operation ID or --entity KIND:ID; use --rule, --schema, --example, --check or --visual for detail.'
         : 'mhproto context --capability ID --operation ID; use --rule, --schema, --example, --check or --visual for detail.',
     };
-  const cap = options.capability
-    ? project.capabilities.find((c) => c.id === options.capability)
+  const linked = options.entity ? entityLink(options.entity) : null;
+  if (linked?.capability && options.capability && linked.capability !== options.capability)
+    throw new Error('--entity names a different capability than --capability');
+  const capability = linked?.capability ?? options.capability;
+  const cap = capability
+    ? project.capabilities.find((c) => c.id === capability)
     : project.capabilities.length === 1
       ? project.capabilities[0]
       : null;
   if (!cap) throw new Error('Select a known --capability ID');
   const base = { project: project.name, capability: cap.id, digest: cap.digest };
-  const target = options.entity
-    ? entityLink(options.entity)
+  const target = linked
+    ? linked
     : options.operation
       ? { kind: 'operation', id: options.operation }
       : options.schema

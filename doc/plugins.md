@@ -61,6 +61,8 @@ ones.
 | `[name, { … }]`              | The same, with options passed to the plugin                         |
 | Presets (`presets:` entries) | The same rules with `mhproto-preset-` as the prefix                 |
 
+Entries inside a preset resolve from the preset's own directory, as in Babel, so a preset can
+ship its plugins as dependencies or files. Packages that ship both ESM and CommonJS load as ESM.
 Plugins listed in `plugins` load first, then presets in order. When a preset includes a plugin the
 project already lists, the project's entry and options win. Listing the same plugin twice in
 `plugins` is an error. `presets: []` loads nothing by default, for projects without OpenAPI.
@@ -157,7 +159,8 @@ should depend on.
 Unknown fields and hooks are errors, so a typo fails at load time instead of being ignored.
 Relative paths resolve from the plugin's own directory; `new URL('./x', import.meta.url)` is the
 clearest form. The kinds `feature`, `rule`, `example`, `check`, `visual`, `system`, `request`,
-`response` and `field` are reserved.
+`response` and `field` are reserved, as are OpenAPI's `operation` and `schema`. Adapters cannot be
+named `spec`, `interface`, `examples` or `checks`, which name a capability's other files.
 
 The factory receives `api`: `version` (the plugin API version, currently 1), `mhproto` (package
 version), `root` and `assertVersion(n)`.

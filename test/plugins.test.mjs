@@ -176,7 +176,22 @@ test('plugin and configuration mistakes fail with the name of what to fix', asyn
   await attempt(
     `export default { name: 'bad', kinds: { operation: { label: 'Op' } } };`,
     use,
-    /"operation" is declared by both bad and openapi/,
+    /"operation" cannot be used as an entity kind/,
+  );
+  await localPlugin(
+    root,
+    'tools/tables.mjs',
+    `export default { name: 'tables', kinds: { table: { label: 'T' } } };`,
+  );
+  await attempt(
+    `export default { name: 'bad', kinds: { table: { label: 'Table' } } };`,
+    (config) => (config.plugins = ['./tools/tables.mjs', './tools/bad.mjs']),
+    /"table" is declared by both tables and bad/,
+  );
+  await attempt(
+    `export default { name: 'bad', interfaces: { spec: { load() {} } } };`,
+    use,
+    /"spec" cannot be used as an interface adapter name/,
   );
   await attempt(
     `export default { name: 'bad', kinds: { rule: { label: 'Rule' } } };`,
@@ -218,7 +233,8 @@ test('plugin and configuration mistakes fail with the name of what to fix', asyn
     /no plugin provides the "openapi" interface/,
   );
   await attempt(
-    `export default { plugins: [], presets: ['./tools/bad.mjs'] };`,
+    // Entries in a preset resolve from the preset's own directory.
+    `export default { plugins: [], presets: ['./' + new URL(import.meta.url).pathname.split('/').pop()] };`,
     (config) => (config.presets = ['./tools/bad.mjs']),
     /Preset cycle/,
   );
@@ -410,7 +426,7 @@ test('exported previews inline plugin renderers and show plugin kinds next to th
   assert.equal(doc.title, 'status_reads · MHProto');
   // Escaping: plugin data is text, not markup.
   window.mhprotoViewerPlugins[0].kinds.table.section = (_table, ui) =>
-    ui.html`<p class="probe">${'<img src=x onerror=alert(1)>'}</p>`;
+    ui.html`<p class="probe">${'<img src=x onerror=alert(1)>'}${false}${null}${undefined}</p>`;
   await go('#/features/example/entities/table/services');
   assert.equal(doc.querySelector('.probe').innerHTML, '&lt;img src=x onerror=alert(1)&gt;');
   // A failing renderer falls back to the plain definition.
@@ -489,4 +505,99 @@ test('skills install what is missing, never overwrite, and can be chosen, remove
     if (name !== 'mhproto-format') assert.ok(text.includes('../mhproto-format/SKILL.md'), name);
     assert.ok(!text.includes('mhproto-specify/references'), name);
   }
+});
+
+test('presets resolve their own entries, and dual ESM/CommonJS packages load as ESM', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'mhproto-resolve-'));
+  run(root, 'init', '--no-skills');
+  const write = async (file, text) => {
+    await mkdir(path.dirname(path.join(root, file)), { recursive: true });
+    await writeFile(path.join(root, file), text);
+  };
+  // The preset's plugins live in its own node_modules and folder, not the project's.
+  const preset = 'node_modules/mhproto-preset-team';
+  await write(
+    `${preset}/package.json`,
+    JSON.stringify({ name: 'mhproto-preset-team', main: 'index.mjs' }),
+  );
+  await write(`${preset}/index.mjs`, `export default { plugins: ['dual', './local.mjs'] };`);
+  await write(`${preset}/local.mjs`, `export default { name: 'local' };`);
+  const dual = `${preset}/node_modules/mhproto-plugin-dual`;
+  await write(
+    `${dual}/package.json`,
+    JSON.stringify({
+      name: 'mhproto-plugin-dual',
+      exports: { import: './index.mjs', require: './index.cjs' },
+    }),
+  );
+  await write(`${dual}/index.mjs`, `export default { name: 'dual' };`);
+  await write(
+    `${dual}/index.cjs`,
+    `Object.defineProperty(exports, '__esModule', { value: true }); exports.default = { name: 'dual-cjs' };`,
+  );
+  await edit(root, 'mhproto.yaml', (config) => (config.presets = ['recommended', 'team']));
+  assert.deepEqual(
+    JSON.parse(run(root, 'plugins', '--json')).plugins.map((p) => p.name),
+    ['openapi', 'dual', 'local'],
+  );
+});
+
+test('a throwing example hook is reported, not fatal', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'mhproto-hook-'));
+  run(root, 'init', '--no-skills');
+  await localPlugin(
+    root,
+    'tools/strict.mjs',
+    `export default { name: 'strict', interfaces: { strict: {
+      load: () => ({ entities: [] }),
+      async validateExample() { throw new Error('boom'); },
+    } } };`,
+  );
+  await edit(root, 'mhproto.yaml', (config) => {
+    config.plugins = ['./tools/strict.mjs'];
+    config.capabilities[0].interfaces = [
+      { adapter: 'openapi', file: config.capabilities[0].interface },
+      { adapter: 'strict', file: 'mhproto.yaml' },
+    ];
+    delete config.capabilities[0].interface;
+  });
+  const messages = (await validateProject(await loadProject(root))).map((i) => i.message);
+  assert.ok(messages.includes('strict interface mhproto.yaml: EXAMPLE-E-1: boom'), messages);
+});
+
+test('links across capabilities appear in packets on both sides', async () => {
+  const root = await sqlProject();
+  await edit(root, 'mhproto.yaml', (config) => {
+    const cap = config.capabilities[0];
+    config.capabilities.push({
+      id: 'db',
+      spec: cap.spec,
+      interfaces: [cap.interfaces.pop()],
+    });
+  });
+  await edit(root, 'mhproto/interfaces/openapi.yaml', (doc) => {
+    doc.paths['/status'].get['x-mhproto-links'] = ['db/table:status_reads'];
+  });
+  const project = await loadProject(root);
+  assert.equal((await validateProject(project)).filter((i) => i.level === 'error').length, 0);
+  const packet = contextPacket(project, { entity: 'db/table:status_reads' });
+  assert.equal(packet.capability, 'db');
+  assert.deepEqual(packet.linkedFrom, [
+    { capability: 'example', kind: 'operation', id: 'getStatus', title: 'GET /status' },
+  ]);
+  assert.deepEqual(
+    contextPacket(project, { capability: 'example', operation: 'getStatus' }).links,
+    [{ capability: 'db', kind: 'table', id: 'status_reads', title: 'status_reads' }],
+  );
+  assert.throws(
+    () => contextPacket(project, { capability: 'example', entity: 'db/table:status_reads' }),
+    /different capability/,
+  );
+});
+
+test('snapshots with malformed entities are rejected before rendering', async () => {
+  const project = await model(await sqlProject());
+  const saved = contractSnapshot(project);
+  saved.project.capabilities[0].entities[1].kind = '"><img src=x onerror=alert(1)>';
+  assert.throws(() => snapshotProject(saved), /valid MHProto contract/);
 });

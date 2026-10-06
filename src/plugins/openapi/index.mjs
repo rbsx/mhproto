@@ -287,6 +287,8 @@ function operationPacket(entity, ctx) {
   };
   const result = {
     operation: pick(op, ['operationId', 'method', 'path', 'summary']),
+    // Only operations that declare x-mhproto-links carry this field.
+    ...(entity.links.length ? { links: ctx.defaults(entity).links } : {}),
     ...ctx.select(fields),
   };
   const refs = schemaRefs({

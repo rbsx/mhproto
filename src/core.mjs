@@ -389,7 +389,15 @@ export async function validateProject(project) {
       if (example.request && !hasEntity('operation', example.request.operation))
         issue(cap, 'error', `${example.id} request references missing operation`);
       for (const { item, hooks } of adapters)
-        hooks.validateExample?.(example, adapterContext(item));
+        try {
+          await hooks.validateExample?.(example, adapterContext(item));
+        } catch (error) {
+          issue(
+            cap,
+            'error',
+            `${item.adapter} interface ${item.file}: ${example.id}: ${error.message}`,
+          );
+        }
     }
     for (const check of cap.checks) {
       if (!check.id || checkIds.has(check.id))

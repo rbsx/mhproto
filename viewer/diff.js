@@ -150,7 +150,11 @@ export function snapshotProject(value) {
       !Array.isArray(cap.rules) ||
       !Array.isArray(cap.examples) ||
       !Array.isArray(cap.checks) ||
-      (cap.openapi ? !Array.isArray(cap.operations) : !Array.isArray(cap.entities))
+      (cap.openapi ? !Array.isArray(cap.operations) : !Array.isArray(cap.entities)) ||
+      (cap.entities ?? []).some(
+        (e) =>
+          !/^[a-z][a-z0-9-]*$/.test(e?.kind) || !Array.isArray(e.rules) || !Array.isArray(e.links),
+      )
     )
       throw new Error('The baseline does not contain a valid MHProto contract.');
     ids.add(cap.id);
